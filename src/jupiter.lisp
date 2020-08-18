@@ -11,28 +11,9 @@
         (code-char code)
         default)))
 
-(defun decode-param (s)
-  (labels ((f (list)
-             (when list
-               (case (car list)
-                 (#\% (cons (http-char (cadr list) (caddr list))
-                            (f (cdddr list))))
-                 (#\+ (cons #\Space (f (cdr list))))
-                 (otherwise (cons (car list) (f (cdr list))))))))
-    (coerce (f (coerce s 'list)) 'string)))
-
-(defun parse-params (s)
-  (let ((i1 (position #\= s))
-        (i2 (position #\& s)))
-    (cond (i1 (cons (cons (intern (string-upcase (subseq s 0 i1)))
-                          (decode-param (subseq s (1+ i1) i2)))
-                    (and i2 (parse-params (subseq s (1+ i2))))))
-          ((equal s "") nil)
-          (t s))))
-
 (defun header-case (c)
   (check-type c character)
-  (case c
+  (case (char-downcase c)
     (#\p :none)
     (#\g :get)
     (#\h :head)
@@ -51,13 +32,34 @@
           (#\u :put))
         key)))
 
+(defun decode-parameters (param)
+  (let ((replaced (str:replace-all "+" " " param)))
+    (if (str:containsp "%" replaced)
+        (labels ((f (list)
+                   (when list
+                     (case (car list)
+                       (#\% (cons (http-char (cadr list) (caddr list))
+                                  (f (cdddr list))))
+                       (otherwise (cons (car list) (f (cdr list))))))))
+          (coerce (f (coerce replaced 'list)) 'string))
+        replaced)))
+
+(defun parse-parameters (param-string)
+  (mapcar (lambda (params)
+            (let ((split (str:split "=" params)))
+              (cons (intern (string-upcase (first split)))
+                    (decode-parameters (second split)))))
+          (str:split "&" param-string)))
+
 (defun parse-request-line (request-line)
   (let ((words (str:words request-line)))
     (destructuring-bind (one two three)
         words
-      (list (cons :method (determine-http-method one))
-            (cons :url two)
-            (cons :http-version three)))))
+      (let ((split (str:split "?" two)))
+        (list (cons :method (determine-http-method one))
+              (cons :url (first split))
+              (cons :parameters (parse-parameters (second split)))
+              (cons :http-version three))))))
 
 (defun parse-url (s)
   (let* ((url (subseq s
@@ -80,7 +82,7 @@
 (defun get-content-params (stream header)
   (let ((length (cdr (assoc 'content-length header))))
     (when length
-      (let ((content (Make-string (parse-integer length))))
+      (let ((content (make-string (parse-integer length))))
         (read-sequence content stream)
         (parse-params content)))))
 
