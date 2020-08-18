@@ -70,6 +70,15 @@
         (cons (subseq url 0 x) (parse-params (subseq url (1+ x))))
         (cons url '()))))
 
+(defun get-headers (stream)
+  (loop :for line := (read-line stream)
+        :for split := (str:split ":" line :limit 2)
+        :do (print line)
+        :while (/= (length split) 1)
+        :collect
+        (cons (intern (string-upcase (car split)))
+              (parse-parameters (second split)))))
+
 (defun get-header (stream)
   (let* ((s (read-line stream))
          (h (let ((i (position #\: s)))
@@ -84,27 +93,26 @@
     (when length
       (let ((content (make-string (parse-integer length))))
         (read-sequence content stream)
-        (parse-params content)))))
+        (parse-parameters content)))))
 
 (defun serve (request-handler)
-  (let ((socket (usocket:socket-listen "127.0.0.1" 8080)))
+  (let ((socket (usocket:socket-listen "127.0.0.1" 8085)))
     (unwind-protect
          (loop (with-open-stream (stream (usocket:socket-stream (usocket:socket-accept socket)))
-                 (let* ((url (parse-url (read-line stream)))
-                        (path (car url))
-                        (header (get-header stream))
-                        (params (append (cdr url)
+                 (let* ((url (parse-request-line (read-line stream)))
+                        (path (cdr (assoc :URL url)))
+                        (header (get-headers stream))
+                        (params (append (cdr (assoc :PARAMETERS header))
                                         (get-content-params stream header)))
                         (*standard-output* stream))
                    (funcall request-handler path header params))))
       (usocket:socket-close socket))))
 
 (defun hello-request-handler (path header params)
-  (declare (ignore header))
-  (if (equal path "greeting")
+  (if (equal path "/greeting")
       (let ((name (assoc 'name params)))
         (if (not name)
-            (princ "bazoink")
+            (princ (cons header params))
             (princ (cdr name))))
       (princ "page unknown")))
 
