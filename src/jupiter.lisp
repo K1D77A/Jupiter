@@ -76,27 +76,25 @@
         :do (print line)
         :while (/= (length split) 1)
         :collect
-        (cons (intern (string-upcase (car split)))
-              (parse-parameters (second split)))))
-
-(defun get-header (stream)
-  (let* ((s (read-line stream))
-         (h (let ((i (position #\: s)))
-              (when i
-                (cons (intern (string-upcase (subseq s 0 i)))
-                      (subseq s (+ i 2)))))))
-    (when h
-      (cons h (get-header stream)))))
+        (cons (intern (string-upcase (str:trim-left(car split))))
+              (parse-header-parameters (second split)))))
 
 (defun get-content-params (stream header)
   (let ((length (cdr (assoc 'content-length header))))
     (when length
       (let ((content (make-string (parse-integer length))))
         (read-sequence content stream)
-        (parse-parameters content)))))
+        (parse-header-parameters content)))))
+
+(defun parse-header-parameters (line)
+  (let ((split (str:split "," line)))
+    (mapcar (lambda (l)
+              (mapcar #'str:trim
+                      (str:split ";" l)))
+            split)))
 
 (defun serve (request-handler)
-  (let ((socket (usocket:socket-listen "127.0.0.1" 8085)))
+  (let ((socket (usocket:socket-listen "127.0.0.1" 8089)))
     (unwind-protect
          (loop (with-open-stream (stream (usocket:socket-stream (usocket:socket-accept socket)))
                  (let* ((url (parse-request-line (read-line stream)))
