@@ -37,10 +37,10 @@
     (if (str:containsp "%" replaced)
         (labels ((f (list)
                    (when list
-                     (case (car list)
-                       (#\% (cons (http-char (cadr list) (caddr list))
-                                  (f (cdddr list))))
-                       (otherwise (cons (car list) (f (cdr list))))))))
+                     (if (char= (car list) #\%)
+                         (cons (http-char (cadr list) (caddr list))
+                               (f (cdddr list)))
+                         (cons (car list) (f (cdr list)))))))
           (coerce (f (coerce replaced 'list)) 'string))
         replaced)))
 
@@ -51,40 +51,21 @@
                     (decode-parameters (second split)))))
           (str:split "&" param-string)))
 
-(defun parse-request-line (request-line)
+(defmethod parse-request-line ((http http-packet) request-line)
   (let ((words (str:words request-line)))
     (destructuring-bind (one two three)
         words
       (let ((split (str:split "?" two)))
-        (list (cons :method (determine-http-method one))
-              (cons :url (first split))
-              (cons :parameters (parse-parameters (second split)))
-              (cons :http-version three))))))
-
-(defun parse-url (s)
-  (let* ((url (subseq s
-                      (+ 2 (position #\Space s))
-                      (position #\Space s :from-end t)))
-         (x (position #\? url)))
-    (if x
-        (cons (subseq url 0 x) (parse-params (subseq url (1+ x))))
-        (cons url '()))))
-
-(defun get-headers (stream)
-  (loop :for line := (read-line stream)
-        :for split := (str:split ":" line :limit 2)
-        :do (print line)
-        :while (/= (length split) 1)
-        :collect
-        (cons (intern (string-upcase (str:trim-left(car split))))
-              (parse-header-parameters (second split)))))
-
-(defun get-content-params (stream header)
-  (let ((length (cdr (assoc 'content-length header))))
-    (when length
-      (let ((content (make-string (parse-integer length))))
-        (read-sequence content stream)
-        (parse-header-parameters content)))))
+        (with-accessors ((http-method http-method)
+                         (path path)
+                         (parameters parameters)
+                         (http-version http-version))
+            http
+          (setf http-method (determine-http-method one)
+                path (first split)
+                parameters (parse-parameters (second split))
+                http-version three)
+          http)))))
 
 (defun parse-header-parameters (line)
   (let ((split (str:split "," line)))
@@ -93,25 +74,50 @@
                       (str:split ";" l)))
             split)))
 
+(defmethod get-headers ((http http-packet) stream)
+  (setf (headers http)
+        (loop :for line := (read-line stream)
+              :for split := (str:split ":" line :limit 2)
+              :do (print line)
+              :while (/= (length split) 1)
+              :collect
+              (cons (intern (string-upcase (str:trim-left (car split))))
+                    (parse-header-parameters (second split)))))
+  http)
+
+(defmethod get-content ((http http-packet) stream)
+  (let ((length (cdr (assoc 'content-length (headers http)))))
+    (if length)
+    
+
+(defmethod get-content-params ((http http-packet) stream)
+  (let ((length (cdr (assoc 'content-length (headers http)))))
+    (when length
+      (let ((content (make-string (parse-integer length))))
+        (read-sequence content stream)
+        (setf (body http) content
+              (content-headers http)
+              (parse-header-parameters content))))))
+
 (defun serve (request-handler)
-  (let ((socket (usocket:socket-listen "127.0.0.1" 8089)))
+  (let ((socket (usocket:socket-listen "127.0.0.1" 8093)))
     (unwind-protect
-         (loop (with-open-stream (stream (usocket:socket-stream (usocket:socket-accept socket)))
-                 (let* ((url (parse-request-line (read-line stream)))
-                        (path (cdr (assoc :URL url)))
-                        (header (get-headers stream))
-                        (params (append (cdr (assoc :PARAMETERS header))
-                                        (get-content-params stream header)))
-                        (*standard-output* stream))
-                   (funcall request-handler path header params))))
+         (with-open-stream (stream (usocket:socket-stream
+                                    (usocket:socket-accept socket)))
+           (let ((http (make-instance 'http-packet)))
+             (parse-request-line http (read-line stream))
+             (get-headers http stream)
+             (get-content-params http stream)
+             (princ http)))
+      ;;(funcall request-handler http))))
       (usocket:socket-close socket))))
 
-(defun hello-request-handler (path header params)
-  (if (equal path "/greeting")
-      (let ((name (assoc 'name params)))
-        (if (not name)
-            (princ (cons header params))
-            (princ (cdr name))))
-      (princ "page unknown")))
+(defun hello-request-handler (http-request)
+  (princ http-request))
+  ;; (if (string-equal (path http-request) "/greeting")
+  ;;     (let ((name (assoc 'name (parameters http-request))))
+  ;;       (if (not name)
+  ;;           (princ "boof"))
+  ;;       (princ "page unknown"))))
 
 
