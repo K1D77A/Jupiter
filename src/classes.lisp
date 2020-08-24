@@ -1,4 +1,5 @@
 (in-package :jupiter)
+
 (defclass http-packet ()
   ((%http-version
     :type string
@@ -21,6 +22,52 @@
    (%body
     :accessor body)))
 
+(defclass handler ()
+  ((%creation-time
+    :initarg :creation-time
+    :accessor creation-time
+    :type string)
+   (%last-modified
+    :initarg :last-modified
+    :accessor last-modified
+    :type string)
+   (%response-body-func
+    :initarg :response-body-func
+    :type function
+    :accessor response-body-func)))
+
+(defclass http-response ()
+  ((%http-version
+    :type string
+    :initarg :http-version
+    :accessor http-version)
+   (%status-code
+    :type keyword
+    :initarg :status-code
+    :accessor status-code)
+   (%headers
+    :type list
+    :initarg :headers
+    :accessor headers)
+   (%body
+    :type stream
+    :initform (make-string-output-stream)
+    :accessor body))
+  (:documentation "A class used to create the headers for a response that are sent to a requester"))
+
+
+(defun make-http-response (server handler status-code)
+  (let ((headers (list (list "Date" (time-now))
+                       (list "Server" (server-version server))
+                       (list "Last-Modified" (last-modified handler))
+                       (list "Content-Type" "text/html"))))
+    (make-instance 'http-response
+                   :headers headers
+                   :status-code status-code
+                   :http-version (http-version server))))
+
+
+
 (defun make-handlers-hash ()
   (let ((hash-table (make-hash-table :test #'eq)))
     (mapcar (lambda (method)
@@ -30,7 +77,13 @@
     hash-table))
 
 (defclass server ()
-  ((%port
+  ((%http-version
+    :initform "HTTP/1.1"
+    :accessor http-version)
+   (%server-version
+    :initform (format nil "Jupiter/~A" (asdf:component-version (asdf:find-system :jupiter)))
+    :accessor server-version)
+   (%port
     :accessor port
     :initarg :port
     :type integer
@@ -65,9 +118,22 @@
     :initarg :n-a-h-http-method
     :accessor n-a-h-http-method)))
 
-
 (defmethod print-object ((obj no-associated-handler) stream)
   (print-unreadable-object (obj stream :type t :identity t)
     (format stream "Failed to find a handler for URL: ~S and METHOD: ~S~%"
             (n-a-h-url obj)
             (n-a-h-http-method obj))))
+
+(defmethod print-object ((obj http-response) stream)
+  (flet ((fun ()
+           (format stream "~A ~A~%"
+                   (http-version obj)
+                   (code->status (status-code obj)))
+           (mapcar (lambda (lst)
+                     (format stream "~A: ~A~%" (first lst) (second lst)))
+                   (headers obj))))
+    (if (not *print-readably*)
+        (print-unreadable-object (obj stream)
+          (fun))
+        (fun))))
+

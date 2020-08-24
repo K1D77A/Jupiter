@@ -10,7 +10,9 @@
   :depends-on (#:str
                #:usocket
                #:bordeaux-threads
-               #:metalock)
+               #:metalock
+               #:alexandria
+               #:local-time)
   :components ((:file "package")
                (:file "classes")
                (:file "requests")
