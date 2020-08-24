@@ -21,21 +21,13 @@
    (%body
     :accessor body)))
 
-(defparameter *valid-methods*
-  (list :POST :GET :DELETE :HEAD :PUT :CONNECT :TRACE :OPTIONS :PATCH))
-
-(defun valid-method-p (key)
-  (check-type key keyword)
-  (member key *valid-methods*))
-
-(deftype http-method () `(satisfies valid-method-p))
-
 (defun make-handlers-hash ()
   (let ((hash-table (make-hash-table :test #'eq)))
     (mapcar (lambda (method)
               (setf (gethash method hash-table)
                     (make-hash-table :test #'equalp)))
-            *valid-methods*)))
+            *valid-methods*)
+    hash-table))
 
 (defclass server ()
   ((%port
@@ -73,15 +65,6 @@
     :initarg :n-a-h-http-method
     :accessor n-a-h-http-method)))
 
-(defun get-handler (server method url)
-  (check-type method http-method)
-  (unless (gethash url (gethash method (handlers server)))
-    (error 'no-associated-handler :n-a-h-url url :n-a-h-http-method method)))
-
-(defun set-handler (server method url handler)
-  (check-type handler symbol)
-  (check-type method http-method)
-  (setf (gethash url (gethash method (handlers server))) handler))
 
 (defmethod print-object ((obj no-associated-handler) stream)
   (print-unreadable-object (obj stream :type t :identity t)

@@ -12,4 +12,8 @@
                #:bordeaux-threads
                #:metalock)
   :components ((:file "package")
-               (:file "jupiter")))
+               (:file "classes")
+               (:file "requests")
+               (:file "handlers")
+               (:file "server")
+               (:file "tests")))

@@ -1,0 +1,54 @@
+;;;; jupiter.lisp
+
+(in-package #:jupiter)
+
+
+(defparameter *valid-methods*
+  (list :POST :GET :DELETE :HEAD :PUT :CONNECT :TRACE :OPTIONS :PATCH))
+
+(defun valid-method-p (key)
+  (check-type key keyword)
+  (member key *valid-methods*))
+
+(deftype http-method () `(satisfies valid-method-p))
+
+(defun get-handler (server method url)
+  (check-type method http-method)
+  (unless (gethash url (gethash method (handlers server)))
+    (error 'no-associated-handler :n-a-h-url url :n-a-h-http-method method)))
+
+(defun set-handler (server method url handler)
+  (check-type handler symbol)
+  (check-type method http-method)
+  (setf (gethash url (gethash method (handlers server))) handler))
+
+(defmethod stop-server ((server server))
+  (usocket:socket-close (listening-socket server)))
+
+(defparameter *cons* ())
+(defmethod get-connections ((server server))
+  (with-accessors ((socket listening-socket))
+      server
+    (with-open-stream (stream (usocket:socket-stream (usocket:socket-accept socket)))
+      (push stream *cons*)
+      (serve server stream))))
+
+(defmethod serve ((server server) stream)
+  "Given an instance of SERVER and a STREAM this function will attempt to parse a HTTP request from
+the STREAM and then call the associated handler."
+  (let ((packet (parse-request stream)))
+    (with-accessors ((http-method http-method)
+                     (path path))
+        packet
+      (let ((*standard-output* stream))
+        (handler-case 
+            (let ((handler (get-handler server http-method path)))
+              (funcall handler packet))
+          (no-associated-handler ()
+            (404-handler http-method path))
+          ;;need to handle other conditions ie print the stack trace
+          )))))
+
+
+
+

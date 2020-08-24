@@ -1,6 +1,4 @@
-;;;; jupiter.lisp
-
-(in-package #:jupiter)
+(in-package :jupiter)
 
 (defun http-char (c1 c2 &optional (default #\Space))
   (let ((code (parse-integer
@@ -85,11 +83,6 @@
                     (parse-header-parameters (second split)))))
   http)
 
-(defmethod get-content ((http http-packet) stream)
-  (let ((length (cdr (assoc 'content-length (headers http)))))
-    (if length)
-    
-
 (defmethod get-content-params ((http http-packet) stream)
   (let ((length (cdr (assoc 'content-length (headers http)))))
     (when length
@@ -99,25 +92,11 @@
               (content-headers http)
               (parse-header-parameters content))))))
 
-(defun serve (request-handler)
-  (let ((socket (usocket:socket-listen "127.0.0.1" 8093)))
-    (unwind-protect
-         (with-open-stream (stream (usocket:socket-stream
-                                    (usocket:socket-accept socket)))
-           (let ((http (make-instance 'http-packet)))
-             (parse-request-line http (read-line stream))
-             (get-headers http stream)
-             (get-content-params http stream)
-             (princ http)))
-      ;;(funcall request-handler http))))
-      (usocket:socket-close socket))))
-
-(defun hello-request-handler (http-request)
-  (princ http-request))
-  ;; (if (string-equal (path http-request) "/greeting")
-  ;;     (let ((name (assoc 'name (parameters http-request))))
-  ;;       (if (not name)
-  ;;           (princ "boof"))
-  ;;       (princ "page unknown"))))
-
-
+(defun parse-request (stream)
+  "Given a STREAM reads from the stream and attempts to construct a valid instance of http-packet.
+Finally returns this packet."
+  (let ((http (make-instance 'http-packet)))
+    (parse-request-line http (read-line stream))
+    (get-headers http stream)
+    (get-content-params http stream)
+    http))
