@@ -74,7 +74,7 @@
 
 (defmethod get-headers ((http http-packet) stream)
   (setf (headers http)
-        (loop :for line := (read-line stream)
+        (loop :for line := (read-line-until-crlf stream)
               :for split := (str:split ":" line :limit 2)
               :while (/= (length split) 1)
               :collect
@@ -103,7 +103,30 @@
   "Given a STREAM reads from the stream and attempts to construct a valid instance of http-packet.
 Finally returns this packet."
   (let ((http (make-instance 'http-packet)))
-    (parse-request-line http (read-line stream))
+    (parse-request-line http (read-line-until-crlf stream))
     (get-headers http stream)
     (get-content-params http stream)
     http))
+
+(defun read-line-until-CRLF (stream)
+  (declare (optimize (speed 3) (safety 1)))
+  (let ((list 
+          (the list
+               (loop :for byte := (read-byte stream nil)
+                     :collect (code-char byte) :into boof 
+                     :if (= byte 13)
+                       :do
+                          (let ((nbyte (read-byte stream nil)))
+                            (when (= nbyte 10)
+                              (return boof)))))))
+    (coerce list 'string)))
+
+
+
+
+
+
+
+
+
+

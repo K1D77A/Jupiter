@@ -30,7 +30,7 @@
 (defmethod get-connections ((server server))
   (with-accessors ((socket listening-socket))
       server
-    (loop :for con := (usocket:socket-accept socket)
+    (loop :for con := (usocket:socket-accept socket :element-type '(unsigned-byte 8))
           :do
              (handler-case
                  (with-open-stream (stream (usocket:socket-stream con))

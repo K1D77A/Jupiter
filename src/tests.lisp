@@ -22,6 +22,6 @@
                 (lambda (request response)
                   (declare (ignore request))
                   (with-open-file (s "../are-abbos-even-human-d0.mp4" :element-type '(unsigned-byte 8))
-                    (setf (response-array response) (to-arr s)))
+                    (setf (body response) (to-arr s)))
                   (set-content-type response (cl-mime-from-string:mime-type-from-string
                                               "../are-abbos-even-human-d0.mp4"))))

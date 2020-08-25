@@ -45,18 +45,12 @@
     :type keyword
     :initarg :status-code
     :accessor status-code)
-   (%response-array
-    :type array
-    :initform #()
-    :accessor response-array
-    :documentation "this array is optional, if you set this, this will be sent to the client 
-instead of body")
    (%headers
     :type list
     :initarg :headers
     :accessor headers)
    (%body
-    :type stream
+    :type (or stream array)
     :initform (make-string-output-stream)
     :accessor body))
   (:documentation "A class used to create the headers for a response that are sent to a requester"))

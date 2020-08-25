@@ -48,20 +48,30 @@
         new-content-type))
 
 (defun send-response (stream response)
+  "Given a STREAM and a RESPONSE object this function will serialize RESPONSE and send it down STREAM."
   (let* ((headers (headers response))
-         (body nil))
-    (if (zerop (length (response-array response)));;check if response is a vector
-        (setf body (get-output-stream-string (body response)));;convert body to a string
-        ;;body is the output of calling the handler function
-        (setf body (response-array response)))
-    (let ((body-len (length body)));;get its length
-      (print body-len)
-      (setf (headers response) (append headers (list (list "Content-Length" body-len))))
-      ;;append a new header so the client knows how much to download
-      (let ((*print-readably* t));;this means that print object won't add the #<...> to the object
-        (print-object response stream))
-      (typecase body
-        (string (response-format stream "~A" body));;append the body
-        (array (write-sequence body stream)))
-      (force-output stream))));;force output all of it
+         (nstream (make-string-output-stream))
+         (body (body response))
+         (body-as-string)
+         (body-len
+           (if (arrayp body)
+               (length body)
+               (progn (setf body-as-string (get-output-stream-string (body response)))
+                      (length body-as-string))))
+         (*print-readably* t));;remove #< from printed representation of response
+    (setf (headers response) (append headers (list (list "Content-Length" body-len))))
+    (print-object response nstream);;this will print the headers into the new stream
+    (when body-as-string 
+      (response-format nstream "~A" body-as-string));;only print the body if its a string
+    (force-output nstream)
+    (let ((str (get-output-stream-string nstream)))
+      (write-sequence (string-to-octets str) stream)
+      (unless body-as-string ;;if the body wasn't a string then finally send that
+        (write-sequence body stream))))
+  (force-output stream))
 
+(defun string-to-octets (string)
+  (check-type string string)
+  (locally (declare (optimize (speed 3) (safety 0)))
+    (let ((ar (make-array (length (the string string)) :element-type '(unsigned-byte 8))))
+      (map-into ar #'char-code string))))
