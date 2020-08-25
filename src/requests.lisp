@@ -66,6 +66,7 @@
           http)))))
 
 (defun parse-header-parameters (line)
+  (declare (optimize (speed 3) (safety 1)))
   (let ((split (str:split "," line)))
     (mapcar (lambda (l)
               (mapcar #'str:trim
@@ -73,20 +74,28 @@
             split)))
 
 (defmethod get-headers ((http http-packet) stream)
+  (declare (optimize (speed 3) (safety 1)))
   (setf (headers http)
         (loop :for line := (read-line stream)
               :for split := (str:split ":" line :limit 2)
-              :do (print line)
               :while (/= (length split) 1)
               :collect
               (cons (intern (string-upcase (str:trim-left (car split))))
                     (parse-header-parameters (second split)))))
   http)
 
+(defparameter *requests* ())
+(defmethod get-content-length ((http http-packet))
+  (let ((len (second (assoc 'content-length (headers http)))))
+    (when len       
+      (parse-integer (first len)))))
+
+
 (defmethod get-content-params ((http http-packet) stream)
-  (let ((length (cdr (assoc 'content-length (headers http)))))
+  (push http *requests*)
+  (let ((length (get-content-length http)))
     (when length
-      (let ((content (make-string (parse-integer length))))
+      (let ((content (make-string length)))
         (read-sequence content stream)
         (setf (body http) content
               (content-headers http)

@@ -47,12 +47,14 @@ the STREAM and then call the associated handler."
         packet
       ;;need to sort out something for 404-handler
       (handler-case 
-          (let* ((handler (get-handler server http-method path))
-                 (response (make-http-response server handler :200))
-                 (*standard-output* (body response)))
-            (push response *responses*)
+          (let* ((handler (get-handler server http-method path));;grab associated handler object
+                 (response (make-http-response server handler :200));;create response object
+                 ;;using the handler and the server to fill in headers
+                 (*standard-output* (body response)));;swap *standard-output* to the responses
+            ;;stream in order to write directly to that stream
             (funcall (response-body-func handler) packet response)
-            (send-response stream response))
+            ;;call the handlers function where *standard-output* should be (body response)
+            (send-response stream response));;send the collected down connection stream
         (no-associated-handler ()
           (let ((*standard-output* stream))
             (404-handler http-method path))))

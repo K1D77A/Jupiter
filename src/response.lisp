@@ -44,23 +44,13 @@
 
 (defun send-response (stream response)
   (let* ((headers (headers response))
-         (body (get-output-stream-string (body response)))
-         (body-len (length body)))
+         (body (get-output-stream-string (body response)));;convert body to a string
+         ;;body is the output of calling the handler function
+         (body-len (length body)));;get its length
     (setf (headers response) (append headers (list (list "Content-Length" body-len))))
-    (format stream "~A ~A~%"
-            (http-version response)
-            (code->status (status-code response)))
-    (mapcar (lambda (lst)
-              (format stream "~A: ~A~%" (first lst) (second lst)))
-            (headers response))
-    (format stream "~A~%" body)
-    (force-output stream)))
+    ;;append a new header so the client knows how much to download
+    (let ((*print-readably* t));;this means that print object won't add the #<...> to the object
+      (print-object response stream))
+    (response-format stream "~A" body);;append the body
+    (force-output stream)));;force output all of it
 
-(defun format-response (response stream)
-  (format stream "~A ~A~%"
-          (http-version response)
-          (code->status (status-code response)))
-  (mapcar (lambda (lst)
-            (format stream "~A: ~A~%" (first lst) (second lst)))
-          (headers response)))
-  ;;(format stream "~A~%" body))

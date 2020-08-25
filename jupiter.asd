@@ -14,6 +14,7 @@
                #:alexandria
                #:local-time)
   :components ((:file "package")
+               (:file "helpers")
                (:file "classes")
                (:file "requests")
                (:file "response")

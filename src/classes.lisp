@@ -81,7 +81,10 @@
     :initform "HTTP/1.1"
     :accessor http-version)
    (%server-version
-    :initform (format nil "Jupiter/~A" (asdf:component-version (asdf:find-system :jupiter)))
+    :initform (format nil "Jupiter/~A (~A ~A)"
+                      (asdf:component-version (asdf:find-system :jupiter))
+                      (asdf/common-lisp:lisp-implementation-type)
+                      (asdf/common-lisp:lisp-implementation-version))
     :accessor server-version)
    (%port
     :accessor port
@@ -126,14 +129,14 @@
 
 (defmethod print-object ((obj http-response) stream)
   (flet ((fun ()
-           (format stream "~A ~A~%"
-                   (http-version obj)
-                   (code->status (status-code obj)))
-           (mapcar (lambda (lst)
-                     (format stream "~A: ~A~%" (first lst) (second lst)))
-                   (headers obj))))
-    (if (not *print-readably*)
+           (response-format stream "~A ~A"
+                            (http-version obj)
+                            (code->status (status-code obj)))
+           (loop :for lst :in (headers obj)
+                 :do (response-format stream "~A: ~A" (first lst) (second lst)))
+           (response-format stream "")));;important to add a CRLF before body
+    (if *print-readably*
+        (fun)
         (print-unreadable-object (obj stream)
-          (fun))
-        (fun))))
+          (fun)))))
 
