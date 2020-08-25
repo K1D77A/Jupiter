@@ -47,9 +47,20 @@
          (body (get-output-stream-string (body response)))
          (body-len (length body)))
     (setf (headers response) (append headers (list (list "Content-Length" body-len))))
-    (let ((*print-readably* t))
-      (print-object response stream)
-      (format stream "~A~%" body)
-      (force-output stream))))
+    (format stream "~A ~A~%"
+            (http-version response)
+            (code->status (status-code response)))
+    (mapcar (lambda (lst)
+              (format stream "~A: ~A~%" (first lst) (second lst)))
+            (headers response))
+    (format stream "~A~%" body)
+    (force-output stream)))
 
-
+(defun format-response (response stream)
+  (format stream "~A ~A~%"
+          (http-version response)
+          (code->status (status-code response)))
+  (mapcar (lambda (lst)
+            (format stream "~A: ~A~%" (first lst) (second lst)))
+          (headers response)))
+  ;;(format stream "~A~%" body))

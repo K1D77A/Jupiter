@@ -35,7 +35,9 @@
     (with-open-stream (stream (usocket:socket-stream (usocket:socket-accept socket)))
       (push stream *cons*)
       (serve server stream))))
+
 (defparameter *responses* ())
+
 (defmethod serve ((server server) stream)
   "Given an instance of SERVER and a STREAM this function will attempt to parse a HTTP request from
 the STREAM and then call the associated handler."
@@ -43,19 +45,19 @@ the STREAM and then call the associated handler."
     (with-accessors ((http-method http-method)
                      (path path))
         packet
-      (let ((*standard-output* stream));;need to sort out something for 404-handler
-        (handler-case 
-            (let* ((handler (get-handler server http-method path))
-                   (response (make-http-response server handler :200))
-                   (*standard-output* (body response)))
-              (print (body response))
-              (funcall (response-body-func handler) packet response)
-              (push response *responses*)
-              (send-response stream response))
-          (no-associated-handler ()
-            (404-handler http-method path)))
-        ;;need to handle other conditions ie print the stack trace
-        ))))
+      ;;need to sort out something for 404-handler
+      (handler-case 
+          (let* ((handler (get-handler server http-method path))
+                 (response (make-http-response server handler :200))
+                 (*standard-output* (body response)))
+            (push response *responses*)
+            (funcall (response-body-func handler) packet response)
+            (send-response stream response))
+        (no-associated-handler ()
+          (let ((*standard-output* stream))
+            (404-handler http-method path))))
+      ;;need to handle other conditions ie print the stack trace
+      )))
 
 
 

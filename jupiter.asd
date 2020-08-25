@@ -16,6 +16,7 @@
   :components ((:file "package")
                (:file "classes")
                (:file "requests")
+               (:file "response")
                (:file "handlers")
                (:file "server")
                (:file "tests")))
