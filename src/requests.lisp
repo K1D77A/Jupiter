@@ -66,7 +66,6 @@
           http)))))
 
 (defun parse-header-parameters (line)
-  (declare (optimize (speed 3) (safety 1)))
   (let ((split (str:split "," line)))
     (mapcar (lambda (l)
               (mapcar #'str:trim
@@ -74,7 +73,6 @@
             split)))
 
 (defmethod get-headers ((http http-packet) stream)
-  (declare (optimize (speed 3) (safety 1)))
   (setf (headers http)
         (loop :for line := (read-line stream)
               :for split := (str:split ":" line :limit 2)
@@ -92,7 +90,7 @@
 
 
 (defmethod get-content-params ((http http-packet) stream)
-  (push http *requests*)
+  ;;(push http *requests*)
   (let ((length (get-content-length http)))
     (when length
       (let ((content (make-string length)))

@@ -12,6 +12,8 @@
                #:bordeaux-threads
                #:metalock
                #:alexandria
+               #:cl-mime-from-string
+               #:trivial-backtrace
                #:local-time)
   :components ((:file "package")
                (:file "helpers")

@@ -29,8 +29,10 @@
 
 
 (defun 404-handler (method url)
-  (format t "404 not found~%URL: ~S~%METHOD: ~S~%" method url)
-  (force-output t))
+  (make-instance 'handler :response-body-func 
+                 (lambda () (format t "404 not found~%URL: ~S~%METHOD: ~S~%" method url))
+                 :creation-time (time-now)
+                 :last-modified (time-now)))
 
 
 

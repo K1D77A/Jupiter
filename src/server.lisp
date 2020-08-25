@@ -27,16 +27,16 @@
 (defmethod stop-server ((server server))
   (usocket:socket-close (listening-socket server)))
 
-(defparameter *cons* ())
-
 (defmethod get-connections ((server server))
   (with-accessors ((socket listening-socket))
       server
-    (with-open-stream (stream (usocket:socket-stream (usocket:socket-accept socket)))
-      (push stream *cons*)
-      (serve server stream))))
-
-(defparameter *responses* ())
+    (loop :for con := (usocket:socket-accept socket)
+          :do
+             (handler-case
+                 (with-open-stream (stream (usocket:socket-stream con))
+                   (serve server stream))
+               (condition (c);;this'll do for now
+                 (trivial-backtrace:print-backtrace c :output *error-output*))))))
 
 (defmethod serve ((server server) stream)
   "Given an instance of SERVER and a STREAM this function will attempt to parse a HTTP request from
@@ -56,11 +56,11 @@ the STREAM and then call the associated handler."
             ;;call the handlers function where *standard-output* should be (body response)
             (send-response stream response));;send the collected down connection stream
         (no-associated-handler ()
-          (let ((*standard-output* stream))
-            (404-handler http-method path))))
-      ;;need to handle other conditions ie print the stack trace
+          (let* ((handler (404-handler http-method path))
+                 (response (make-http-response server handler :404))
+                 (*standard-output* (body response)))
+            (funcall (response-body-func handler))
+            (send-response stream response))))
+      ;;need to figure out how I will let the user send a vector down the stream
+      ;;so they can send images etc
       )))
-
-
-
-

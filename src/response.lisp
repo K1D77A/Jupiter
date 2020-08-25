@@ -42,15 +42,26 @@
   (check-type code keyword)
   (cdr (assoc code *status-codes*)))
 
+(defun set-content-type (response new-content-type)
+  (check-type new-content-type string)
+  (setf (second (assoc "Content-Type" (headers response) :test #'string-equal))
+        new-content-type))
+
 (defun send-response (stream response)
   (let* ((headers (headers response))
-         (body (get-output-stream-string (body response)));;convert body to a string
-         ;;body is the output of calling the handler function
-         (body-len (length body)));;get its length
-    (setf (headers response) (append headers (list (list "Content-Length" body-len))))
-    ;;append a new header so the client knows how much to download
-    (let ((*print-readably* t));;this means that print object won't add the #<...> to the object
-      (print-object response stream))
-    (response-format stream "~A" body);;append the body
-    (force-output stream)));;force output all of it
+         (body nil))
+    (if (zerop (length (response-array response)));;check if response is a vector
+        (setf body (get-output-stream-string (body response)));;convert body to a string
+        ;;body is the output of calling the handler function
+        (setf body (response-array response)))
+    (let ((body-len (length body)));;get its length
+      (print body-len)
+      (setf (headers response) (append headers (list (list "Content-Length" body-len))))
+      ;;append a new header so the client knows how much to download
+      (let ((*print-readably* t));;this means that print object won't add the #<...> to the object
+        (print-object response stream))
+      (typecase body
+        (string (response-format stream "~A" body));;append the body
+        (array (write-sequence body stream)))
+      (force-output stream))));;force output all of it
 

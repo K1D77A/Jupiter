@@ -45,6 +45,12 @@
     :type keyword
     :initarg :status-code
     :accessor status-code)
+   (%response-array
+    :type array
+    :initform #()
+    :accessor response-array
+    :documentation "this array is optional, if you set this, this will be sent to the client 
+instead of body")
    (%headers
     :type list
     :initarg :headers
