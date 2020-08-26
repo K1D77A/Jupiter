@@ -25,18 +25,52 @@
   (setf (gethash url (gethash method (handlers server))) handler))
 
 (defmethod stop-server ((server server))
-  (usocket:socket-close (listening-socket server)))
+  (with-accessors ((serving-thread serving-thread)
+                   (con-receive-thread con-receive-thread))
+      server
+    (mapcar #'bt:destroy-thread (list con-receive-thread serving-thread))
+    ;;this is just a shit solution for now, I will use a condition notify to tell them to quit
+    (usocket:socket-close (listening-socket server))))
 
 (defmethod get-connections ((server server))
   (with-accessors ((socket listening-socket))
       server
     (loop :for con := (usocket:socket-accept socket :element-type '(unsigned-byte 8))
-          :do
-             (handler-case
-                 (with-open-stream (stream (usocket:socket-stream con))
-                   (serve server stream))
-               (condition (c);;this'll do for now
-                 (trivial-backtrace:print-backtrace c :output *error-output*))))))
+          :do (let ((incoming-con (make-instance 'incoming-connection :connection con)))
+                (push incoming-con (connections server))))))
+
+(defun service-incoming-connection (server incoming-connection)
+  (when (grab-incoming-connection incoming-connection)
+    (unwind-protect
+         (handler-case
+             (progn
+               (unless (slot-boundp incoming-connection '%con-stream)
+                 (setf (con-stream incoming-connection) (usocket:socket-stream
+                                                         (connection incoming-connection))))
+               (with-accessors ((con-stream con-stream))
+                   incoming-connection
+                 (with-open-stream (stream con-stream)
+                   (serve server stream))))
+           ((or end-of-file stream-error) ()
+             (setf (connections server)
+                   (remove incoming-connection (connections server) :test #'eq)))
+           (condition (c);;this'll do for now
+             (trivial-backtrace:print-backtrace c :output *error-output*)))
+      (release-incoming-connection incoming-connection))))
+
+
+
+;;;need to implement persistent connection using 'pipelines'
+;;;connections are marked as closed by Connection: close
+;;;if a connection times out then a Connection: close should be sent ie graceful shutdown
+;;;all requests from a connection must be answered in order, this will happen naturally if you just
+;;;read from the stream until there is nothing left to read.
+;;;
+
+
+
+
+
 
 (defmethod serve ((server server) stream)
   "Given an instance of SERVER and a STREAM this function will attempt to parse a HTTP request from

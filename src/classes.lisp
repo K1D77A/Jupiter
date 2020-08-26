@@ -60,6 +60,7 @@
   (let ((headers (list (list "Date" (time-now))
                        (list "Server" (server-version server))
                        (list "Last-Modified" (last-modified handler))
+                       (list "Connection" "keep-alive")
                        (list "Content-Type" "text/html"))))
     (make-instance 'http-response
                    :headers headers
@@ -76,11 +77,35 @@
             *valid-methods*)
     hash-table))
 
+(defclass incoming-connection ()
+  ((%connection
+    :accessor connection
+    :initarg :connection)
+   (%in-use
+    :accessor in-use
+    :initform nil
+    :type boolean)
+   (%con-stream
+    :accessor con-stream
+    :initarg :con-stream))
+  (:metaclass metalock:metalock))
+
+(defun grab-incoming-connection (incoming-connection)
+  "Returns either nil or the incoming-connection, if nil is returned it means that the 
+incoming-connection is in use already."
+  (unless (in-use incoming-connection)
+    (setf (in-use incoming-connection) t)
+    incoming-connection))
+
+(defun release-incoming-connection (incoming-connection)
+  (setf (in-use incoming-connection) nil)
+  t)
+
 
 
 (defclass server ()
   ((%http-version
-    :initform "HTTP/1.0"
+    :initform "HTTP/1.1"
     :accessor http-version)
    (%server-version
     :initform (format nil "Jupiter/~A (~A ~A)"
@@ -93,6 +118,10 @@
     :initarg :port
     :type integer
     :initform 80)
+   (%connections
+    :accessor connections
+    :type list
+    :initform '())
    (%interface
     :accessor interface
     :initarg :interface
@@ -100,8 +129,10 @@
    (%handlers
     :accessor handlers
     :initform (make-handlers-hash))
-   (%response-thread
-    :accessor response-thread)
+   (%serving-thread
+    :accessor serving-thread)
+   (%con-receive-thread
+    :accessor con-receive-thread)
    (%listening-socket
     :accessor listening-socket
     :initarg :listening-socket))
@@ -113,6 +144,12 @@
                                :listening-socket (usocket:socket-listen interface port
                                                                         :reuse-address t
                                                                         :reuseaddress t))))
+    (setf (con-receive-thread server)
+          (bt:make-thread (lambda () (get-connections server))))
+    ;; (serving-thread server)
+    ;; (bt:make-thread
+    ;;  (lambda () (loop (loop :for x :in (connections server)
+    ;;                    :do (service-incoming-connection server x))))))
     server))
 
 (define-condition no-associated-handler ()
