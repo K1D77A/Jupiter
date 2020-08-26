@@ -1,4 +1,17 @@
 (in-package :jupiter)
+;;;;really should rewrite most of this to do this using binary,
+;;;;that way no need to convert from octet -> char -> octet
+
+(defparameter *header-strings-as-symbols* ())
+
+(defun header-string->symbol (header-string)
+  (check-type header-string string)
+  (let ((sym (cdr (assoc header-string *header-strings-as-symbols* :test #'string=))))
+    (if sym
+        sym
+        (push (cons header-string
+                    (intern (string-upcase header-string)))
+              *header-strings-as-symbols*))))
 
 (defun http-char (c1 c2 &optional (default #\Space))
   (let ((code (parse-integer
@@ -32,15 +45,9 @@
 
 (defun decode-parameters (param)
   (let ((replaced (str:replace-all "+" " " param)))
-    (if (str:containsp "%" replaced)
-        (labels ((f (list)
-                   (when list
-                     (if (char= (car list) #\%)
-                         (cons (http-char (cadr list) (caddr list))
-                               (f (cdddr list)))
-                         (cons (car list) (f (cdr list)))))))
-          (coerce (f (coerce replaced 'list)) 'string))
-        replaced)))
+    (when (find #\% replaced :test #'char=)
+      (percent-encoding:decode replaced))))
+
 
 (defun parse-parameters (param-string)
   (mapcar (lambda (params)
@@ -72,13 +79,32 @@
                       (str:split ";" l)))
             split)))
 
+
+;;just for the fun of it, this is about 10x faster than using (str:split ..)
+(defun msplit (string)
+  (declare (optimize (speed 3) (safety 1)))
+  (let ((str1 (make-array 0 :element-type 'character :fill-pointer 0 :adjustable t))
+        (str2 (make-array 0 :element-type 'character :fill-pointer 0 :adjustable t))
+        (flag nil))
+    (loop :for char :across string 
+          :do  (if (char= #\: char)
+                   (setf flag t)
+                   (if flag
+                       (vector-push-extend char str1)
+                       (vector-push-extend char str2))))
+    (list (coerce str2 'string) (coerce str1 'string))))
+
+
+
 (defmethod get-headers ((http http-packet) stream)
   (setf (headers http)
         (loop :for line := (read-line-until-crlf stream)
-              :for split := (str:split ":" line :limit 2)
+              :for split := (if (= 1 (length line))
+                                '("")
+                                (msplit line))
               :while (/= (length split) 1)
               :collect
-              (cons (intern (string-upcase (str:trim-left (car split))))
+              (cons (header-string->symbol (str:trim-left (car split)))
                     (parse-header-parameters (second split)))))
   http)
 
@@ -121,8 +147,20 @@ Finally returns this packet."
                               (return boof)))))))
     (coerce list 'string)))
 
-
-
+(defmethod get-cookies ((request http-packet))
+  "Given a REQUEST this will convert every instance of the header 'Cookie' into cookie objects,
+and then return them all."
+  (with-accessors ((headers headers))
+      request
+    (flet ((to-cookie (lst)
+             (let* ((vals (first lst))
+                    (cookie (car vals))
+                    (crumb (cdr vals)))
+               (make-cookie cookie crumb :path nil :expires nil :http-only nil))))
+      (let ((cookies (assoc 'Cookie headers)))
+        (when cookies
+          (mapcar #'to-cookie 
+                  (mapcar #'parse-parameters (second cookies))))))))
 
 
 

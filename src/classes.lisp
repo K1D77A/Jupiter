@@ -76,9 +76,11 @@
             *valid-methods*)
     hash-table))
 
+
+
 (defclass server ()
   ((%http-version
-    :initform "HTTP/1.1"
+    :initform "HTTP/1.0"
     :accessor http-version)
    (%server-version
     :initform (format nil "Jupiter/~A (~A ~A)"
@@ -132,11 +134,110 @@
            (response-format stream "~A ~A"
                             (http-version obj)
                             (code->status (status-code obj)))
-           (loop :for lst :in (headers obj)
-                 :do (response-format stream "~A: ~A" (first lst) (second lst)))
+           (mapc (lambda (lst)
+                   (serialize-header stream (first lst) (second lst)))
+                 (headers obj))
            (response-format stream "")));;important to add a CRLF before body
     (if *print-readably*
         (fun)
         (print-unreadable-object (obj stream)
           (fun)))))
 
+(defgeneric serialize-header (stream key val)
+  (:documentation "Need a way to conditionally serialize parts of headers because sometimes the val
+of a header isn't just a normal number but a complex object like a cookie, these have to be 
+handled differently"))
+
+(defmethod serialize-header (stream key (val cookie))  
+  (format stream "~A:" key)
+  (print-object val stream)
+  (response-format stream "") ;;add the CRLF on the end
+  )
+
+(defmethod serialize-header (stream key val)
+  (response-format stream "~A: ~A" key val))
+
+(defclass cookie ()
+  ((%cookie
+    :initarg :cookie 
+    :accessor cookie)
+   (%crumb
+    :initarg :crumb 
+    :accessor crumb)
+   (%domain
+    :initarg :domain
+    :accessor domain)
+   (%path
+    :initform "/"
+    :initarg :path
+    :accessor path)
+   (%make-session-p
+    :initform nil
+    :initarg :make-session-p
+    :accessor make-session-p
+    :documentation "If this is true then expires is ignored and this cookie becomes a session cookie")
+   (%expires
+    :initarg :expires
+    :initform nil
+    :accessor expires)
+   (%comment
+    :initarg :comment
+    :initform nil
+    :accessor comment)
+   (%encodep
+    :initarg :encodep
+    :initform nil
+    :accessor encodep
+    :documentation "When set to t this will mean that cooking and crumb are percent encoded.")
+   (%http-only
+    :initarg :http-only
+    :initform t
+    :accessor http-only)))
+;;;also need to have a Secure header at some point but no support for HTTPS yet
+
+(defun make-cookie (key val &key (path "/") (make-session-p nil) (expires 7) (http-only t)
+                              (domain nil) (comment nil) (encode nil)) 
+  (make-instance 'cookie :http-only http-only
+                         :expires (if expires
+                                      (time+ expires :day)
+                                      nil)
+                         :encodep encode
+                         :make-session-p make-session-p
+                         :path path
+                         :domain domain
+                         :comment comment
+                         :crumb val
+                         :cookie key))
+
+(defmethod print-object ((obj cookie) stream)
+  ;;gotta convert cookie from an object to something like
+  ;;lu=Rg3vHJZnehYLjVg7qi3bZjzg; Expires=Tue, 15 Jan 2013 21:47:38 GMT; Path=/; Domain=.example.com; ;;HttpOnly
+  (flet ((fun ()
+           (with-accessors ((cookie cookie)
+                            (crumb crumb)
+                            (path path)
+                            (make-session-p make-session-p)
+                            (expires expires)
+                            (http-only http-only)
+                            (comment comment)
+                            (encodep encodep))
+               obj
+             (format stream "~A=~A; "
+                     (if encodep
+                         (percent-encoding:encode cookie)
+                         cookie)
+                     (if encodep
+                         (percent-encoding:encode crumb)
+                         crumb));;Cookie=Crumb;
+             (when (and expires (not make-session-p))
+               (format stream "Expires=~A; " expires))
+             (when path
+               (format stream "Path=~A; " path))
+             (when comment
+               (format stream "Comment=~A; " comment))
+             (when http-only
+               (format stream "HttpOnly")))))
+    (if *print-readably*
+        (fun)
+        (print-unreadable-object (obj stream)
+          (fun)))))

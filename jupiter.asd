@@ -14,6 +14,7 @@
                #:alexandria
                #:cl-mime-from-string
                #:trivial-backtrace
+               #:percent-encoding
                #:local-time)
   :components ((:file "package")
                (:file "helpers")

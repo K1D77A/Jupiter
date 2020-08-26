@@ -1,11 +1,6 @@
 (in-package :jupiter)
 
-(defun time-now ()
-  (let ((timezone (butlast local-time:+rfc-1123-format+)))
-    (format nil "~A~A" (local-time:format-timestring nil (local-time:now)
-                                                     :format timezone 
-                                                     :timezone local-time:+utc-zone+)
-            "GMT")))
+
 
 
 (defmacro define-handler (server (method path) lambda)
@@ -25,8 +20,6 @@
                                                   :creation-time ,time
                                                   :last-modified ,time)))
            (set-handler ,server ,method ,path ,handler))))))
-
-
 
 (defun 404-handler (method url)
   (make-instance 'handler :response-body-func 

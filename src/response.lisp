@@ -47,6 +47,17 @@
   (setf (second (assoc "Content-Type" (headers response) :test #'string-equal))
         new-content-type))
 
+(defmethod add-cookie ((response http-response) (cookie cookie))
+  "Given a RESPONSE object this will add a Set-Cookie header to 
+the response object using COOKIE as its value."
+  (with-accessors ((headers headers))
+      response
+    (setf headers
+          (append headers (list (list "Set-Cookie" cookie))))))
+;;;need to encode any spaces... https://en.wikipedia.org/wiki/Percent-encoding
+;;;well don't have to can just tell the user than no effort is made to perform percent encoding
+
+
 (defun send-response (stream response)
   "Given a STREAM and a RESPONSE object this function will serialize RESPONSE and send it down STREAM."
   (let* ((headers (headers response))
@@ -72,6 +83,6 @@
 
 (defun string-to-octets (string)
   (check-type string string)
-  (locally (declare (optimize (speed 3) (safety 0)))
+  (locally (declare (optimize (speed 3) (safety 1)))
     (let ((ar (make-array (length (the string string)) :element-type '(unsigned-byte 8))))
       (map-into ar #'char-code string))))

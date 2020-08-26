@@ -18,10 +18,19 @@
     (dotimes (pos len arr)
       (setf (aref arr pos) (read-byte fd)))))
 
+(defparameter *vid-as-arr* (with-open-file
+                               (s "../are-abbos-even-human-d0.mp4" :element-type '(unsigned-byte 8))
+                             (to-arr s)))
+
 (define-handler *server* (:GET "/video")
                 (lambda (request response)
-                  (declare (ignore request))
-                  (with-open-file (s "../are-abbos-even-human-d0.mp4" :element-type '(unsigned-byte 8))
-                    (setf (body response) (to-arr s)))
+                  (add-cookie response (make-cookie "boof" "came  l"
+                                                    :domain "/video" :comment "boink"
+                                                    :encode t :http-only t))
+                  (add-cookie response (make-cookie "goink" "ba z  nok"
+                                                    :domain "/video" :comment "boink"
+                                                    :encode t :http-only t))
+                  (get-cookies request)
+                  (setf (body response) *vid-as-arr*)
                   (set-content-type response (cl-mime-from-string:mime-type-from-string
                                               "../are-abbos-even-human-d0.mp4"))))
