@@ -28,8 +28,9 @@ The small example simply serves the content "beep" on the path '/greetings'.
                   (set-content-type response (cl-mime-from-string:mime-type-from-string
                                               "../sausage-roll-d0.mp4"))))
 ```
-This example is more complicated, this sets two custom made cookies with some flags, 
-it shows how to receive the cookies sent on a request and how to send binary data to the client
+This example is more complicated, this sets two custom made cookies with some flags (the :encode 
+flag means that in the cookie and crumb are percentage encoded), 
+it shows how to receive the cookies sent on a request, how to send binary data to the client
 and how to set the content type of your response.
 
 Each handler has two variables passed to it, a 'request' object which is obviously a CL object that
