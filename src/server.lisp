@@ -37,20 +37,20 @@
       server
     (loop :for con := (usocket:socket-accept socket :element-type '(unsigned-byte 8))
           :do (let ((incoming-con (make-instance 'incoming-connection :connection con)))
-                (push incoming-con (connections server))))))
+                (setf (connection server)
+                      (append (list incoming-con) (connections server)))))))
 
 (defun service-incoming-connection (server incoming-connection)
   (when (grab-incoming-connection incoming-connection)
     (unwind-protect
          (handler-case
              (progn
-               (unless (slot-boundp incoming-connection '%con-stream)
-                 (setf (con-stream incoming-connection) (usocket:socket-stream
-                                                         (connection incoming-connection))))
-               (with-accessors ((con-stream con-stream))
+               (with-accessors ((connection connection)
+                                (con-stream con-stream))
                    incoming-connection
-                 (with-open-stream (stream con-stream)
-                   (serve server stream))))
+                 (unless con-stream
+                   (setf con-stream (usocket:socket-stream connection)))
+                 (serve server con-stream)))
            ((or end-of-file stream-error) ()
              (setf (connections server)
                    (remove incoming-connection (connections server) :test #'eq)))

@@ -85,8 +85,9 @@
     :accessor in-use
     :initform nil
     :type boolean)
-   (%con-stream
+   (%con-stream;;currently not used not sure if keeping a stream around is a better idea or not 
     :accessor con-stream
+    :initform nil
     :initarg :con-stream))
   (:metaclass metalock:metalock))
 

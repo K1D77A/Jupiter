@@ -1,6 +1,6 @@
 (in-package :jupiter)
 
-(defparameter *server* (make-server :port 9004))
+(defparameter *server* (make-server :port 9005))
 
 (define-handler *server* (:GET "/greetings")
                 (lambda (request response)
