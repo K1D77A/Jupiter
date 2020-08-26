@@ -19,7 +19,7 @@
       (setf (aref arr pos) (read-byte fd)))))
 
 (defparameter *vid-as-arr* (with-open-file
-                               (s "../are-abbos-even-human-d0.mp4" :element-type '(unsigned-byte 8))
+                               (s "../sausage-roll-d0.mp4" :element-type '(unsigned-byte 8))
                              (to-arr s)))
 
 (define-handler *server* (:GET "/video")
@@ -33,4 +33,4 @@
                   (get-cookies request)
                   (setf (body response) *vid-as-arr*)
                   (set-content-type response (cl-mime-from-string:mime-type-from-string
-                                              "../are-abbos-even-human-d0.mp4"))))
+                                              "../sausage-roll-d0.mp4"))))
