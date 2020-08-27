@@ -1,5 +1,55 @@
 (in-package :jupiter)
 
+
+(defclass special-slot (c2mop:standard-direct-slot-definition)
+  ())
+
+
+(defparameter *slots-needed* '(ACCEPT ACCEPT-ENCODING))
+(defparameter *direct-slots* (mapcar (lambda (sym)
+                                       (make-instance 'special-slot
+                                                      :initargs (list :readers sym)
+                                                      :name sym
+                                                      ))
+                                     *slots-needed*))
+
+(defmethod c2mop:validate-superclass ((class special-slot) (metaclass standard-class))
+  t)
+
+
+(defclass request-meta (c2mop:standard-class)
+  ())
+
+(defmethod c2mop:validate-superclass ((class request-meta) (metaclass standard-class))
+  t)
+
+(defmethod c2mop:compute-effective-slot-definition ((class special-slot) name dslots)
+  (declare (ignore name dslots))
+  (let ((slot (call-next-method)))
+    slot))
+
+(defmethod make-instance ((class request-meta) &rest initargs &key &allow-other-keys)
+  (apply #'call-next-method class initargs))
+
+(defmethod c2mop:compute-slots ((class request-meta))
+  (append (call-next-method)
+          *direct-slots*))
+
+(defclass request ()
+  ((header-symbols
+    :accessor header-symbols
+    :initarg :sym)
+   (boofta
+    :initarg :boofta))
+  (:metaclass request-meta))
+
+
+(defun make-request-class ()
+  (c2cl:ensure-class )
+
+
+
+
 (defclass http-packet ()
   ((%http-version
     :type string
@@ -181,19 +231,6 @@ incoming-connection is in use already."
         (print-unreadable-object (obj stream)
           (fun)))))
 
-(defgeneric serialize-header (stream key val)
-  (:documentation "Need a way to conditionally serialize parts of headers because sometimes the val
-of a header isn't just a normal number but a complex object like a cookie, these have to be 
-handled differently"))
-
-(defmethod serialize-header (stream key (val cookie))  
-  (format stream "~A:" key)
-  (print-object val stream)
-  (response-format stream "") ;;add the CRLF on the end
-  )
-
-(defmethod serialize-header (stream key val)
-  (response-format stream "~A: ~A" key val))
 
 (defclass cookie ()
   ((%cookie
@@ -231,6 +268,24 @@ handled differently"))
     :initarg :http-only
     :initform t
     :accessor http-only)))
+
+
+
+(defgeneric serialize-header (stream key val)
+  (:documentation "Need a way to conditionally serialize parts of headers because sometimes the val
+of a header isn't just a normal number but a complex object like a cookie, these have to be 
+handled differently"))
+
+(defmethod serialize-header (stream key (val cookie))  
+  (format stream "~A:" key)
+  (print-object val stream)
+  (response-format stream "") ;;add the CRLF on the end
+  )
+
+(defmethod serialize-header (stream key val)
+  (response-format stream "~A: ~A" key val))
+
+
 ;;;also need to have a Secure header at some point but no support for HTTPS yet
 
 (defun make-cookie (key val &key (path "/") (make-session-p nil) (expires 7) (http-only t)

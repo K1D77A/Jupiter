@@ -15,6 +15,7 @@
                #:cl-mime-from-string
                #:trivial-backtrace
                #:percent-encoding
+               #:closer-mop
                #:local-time)
   :components ((:file "package")
                (:file "helpers")
