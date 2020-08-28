@@ -9,9 +9,10 @@
   (let ((sym (cdr (assoc header-string *header-strings-as-symbols* :test #'string=))))
     (if sym
         sym
-        (push (cons header-string
-                    (intern (string-upcase header-string)))
-              *header-strings-as-symbols*))))
+        (progn (push (cons header-string
+                           (intern (string-upcase header-string)))
+                     *header-strings-as-symbols*)
+               (defmethod )
 
 (defun http-char (c1 c2 &optional (default #\Space))
   (let ((code (parse-integer

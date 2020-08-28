@@ -16,6 +16,7 @@
                #:trivial-backtrace
                #:percent-encoding
                #:closer-mop
+               #:cacle
                #:local-time)
   :components ((:file "package")
                (:file "helpers")

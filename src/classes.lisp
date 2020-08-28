@@ -1,55 +1,5 @@
 (in-package :jupiter)
 
-
-(defclass special-slot (c2mop:standard-direct-slot-definition)
-  ())
-
-
-(defparameter *slots-needed* '(ACCEPT ACCEPT-ENCODING))
-(defparameter *direct-slots* (mapcar (lambda (sym)
-                                       (make-instance 'special-slot
-                                                      :initargs (list :readers sym)
-                                                      :name sym
-                                                      ))
-                                     *slots-needed*))
-
-(defmethod c2mop:validate-superclass ((class special-slot) (metaclass standard-class))
-  t)
-
-
-(defclass request-meta (c2mop:standard-class)
-  ())
-
-(defmethod c2mop:validate-superclass ((class request-meta) (metaclass standard-class))
-  t)
-
-(defmethod c2mop:compute-effective-slot-definition ((class special-slot) name dslots)
-  (declare (ignore name dslots))
-  (let ((slot (call-next-method)))
-    slot))
-
-(defmethod make-instance ((class request-meta) &rest initargs &key &allow-other-keys)
-  (apply #'call-next-method class initargs))
-
-(defmethod c2mop:compute-slots ((class request-meta))
-  (append (call-next-method)
-          *direct-slots*))
-
-(defclass request ()
-  ((header-symbols
-    :accessor header-symbols
-    :initarg :sym)
-   (boofta
-    :initarg :boofta))
-  (:metaclass request-meta))
-
-
-(defun make-request-class ()
-  (c2cl:ensure-class )
-
-
-
-
 (defclass http-packet ()
   ((%http-version
     :type string
