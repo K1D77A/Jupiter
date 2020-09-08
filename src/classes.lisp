@@ -83,7 +83,7 @@
     :initarg :connection)
    (%timeout
     :accessor timeout
-    :initform 360
+    :initform 15
     :type integer)
    (%in-use
     :accessor in-use
@@ -105,6 +105,9 @@
 (defmethod timed-out-p ((con incoming-connection))
   (let ((now (get-universal-time)))
     (<= (timeout con) (- now (last-used con)))))
+
+(defmethod reset-last-used ((con incoming-connection))
+  (setf (last-used con) (get-universal-time)))
 
 (defun grab-incoming-connection (incoming-connection &optional (block nil))
   "Returns either nil or the incoming-connection, if nil is returned it means that the 
@@ -300,7 +303,7 @@ handled differently"))
   (:documentation "Signalled when a client sends a connectdion: close' header"))
 
 (defun signal-graceful-disconnect ()
-  (error 'graceful-disconnection))
+  (error 'graceful-disconnect))
 
 (define-condition no-associated-handler ()
   ((n-a-h-url

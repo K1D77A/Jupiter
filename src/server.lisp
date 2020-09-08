@@ -51,7 +51,7 @@
                   (usocket:socket-close (connection con))
                   (release-incoming-connection con)));;should probably swap this to an actual lock
               to-shutdown)
-        (when to-keep;;no point doing setf if nothing was yeeted
+        (when to-shutdown;;no point doing setf if nothing was yeeted
           (setf connections to-keep))))))
 
 (defun service-connections (server)
@@ -63,7 +63,9 @@
                                  (if (timed-out-p con)
                                      ;;need to check for a timeout,
                                      ;;if it has then send a 'connection: close'
-                                     (shutdown-an-incoming-connection server con)
+                                     (progn
+                                       (log:info "Connection timed out ~A" con)
+                                       (shutdown-an-incoming-connection server con))
                                      (service-incoming-connection server con))
                                (dirty-disconnect (c)
                                  (log:warn "Dirty disconnection by client: ~A" c)
@@ -97,11 +99,9 @@
       server
     (loop :for con := (usocket:socket-accept socket :element-type '(unsigned-byte 8))
           :if (not (find con connections :test #'eq))
-            :do (push (make-instance 'incoming-connection :connection con) connections)
-          :else :do (sleep 1))))
-
-(defmethod (setf connections) :before (new-val (server server))
-  (log:info "Adding new connection: ~A to server: ~A" new-val server))
+            :do (log:info "Adding new connection: ~A to server: ~A" con server)
+                (push (make-instance 'incoming-connection :connection con) connections)
+          :else :do (sleep 0.0001))))
 
 (defmethod service-incoming-connection :before ((server server) con)
   (when (log:debug)
@@ -119,6 +119,7 @@
           (when (and con-stream (listen con-stream));;make sure there is actually something to read
             (unless (open-stream-p con-stream)
               (signal-dirty-disconnect con-stream))
+            (reset-last-used incoming-connection);;gotta make sure that the timeout is reset
             (serve server con-stream))))
     ((or end-of-file stream-error) ()
       (signal-dirty-disconnect (con-stream incoming-connection)))))
@@ -143,7 +144,6 @@ the STREAM and then call the associated handler."
     (with-accessors ((http-method http-method)
                      (path path))
         packet
-      ;;need to sort out something for 404-handler
       (handler-case 
           (let* ((handler (get-handler server http-method path));;grab associated handler object
                  (response (make-http-response server handler :200));;create response object
