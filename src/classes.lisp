@@ -56,18 +56,18 @@
   (:documentation "A class used to create the headers for a response that are sent to a requester"))
 
 
-(defun make-http-response (server handler status-code)
+(defun make-http-response (server handler status-code &key (close nil))
   (let ((headers (list (list "Date" (time-now))
                        (list "Server" (server-version server))
                        (list "Last-Modified" (last-modified handler))
-                       (list "Connection" "keep-alive")
+                       (list "Connection" (if close
+                                              "close"
+                                              "keep-alive"))
                        (list "Content-Type" "text/html"))))
     (make-instance 'http-response
                    :headers headers
                    :status-code status-code
                    :http-version (http-version server))))
-
-
 
 (defun make-handlers-hash ()
   (let ((hash-table (make-hash-table :test #'eq)))
@@ -81,6 +81,10 @@
   ((%connection
     :accessor connection
     :initarg :connection)
+   (%timeout
+    :accessor timeout
+    :initform 360
+    :type integer)
    (%in-use
     :accessor in-use
     :initform nil
@@ -88,21 +92,36 @@
    (%con-stream;;currently not used not sure if keeping a stream around is a better idea or not 
     :accessor con-stream
     :initform nil
-    :initarg :con-stream))
+    :initarg :con-stream)
+   (%deletep
+    :accessor deletep
+    :initform nil)
+   (%last-used
+    :accessor last-used
+    :type integer
+    :initform (get-universal-time)))
   (:metaclass metalock:metalock))
 
-(defun grab-incoming-connection (incoming-connection)
+(defmethod timed-out-p ((con incoming-connection))
+  (let ((now (get-universal-time)))
+    (<= (timeout con) (- now (last-used con)))))
+
+(defun grab-incoming-connection (incoming-connection &optional (block nil))
   "Returns either nil or the incoming-connection, if nil is returned it means that the 
 incoming-connection is in use already."
-  (unless (in-use incoming-connection)
-    (setf (in-use incoming-connection) t)
-    incoming-connection))
+  (if block
+      (loop :for in-use := (in-use incoming-connection)
+            :if in-use
+              :do (sleep 0.00001);;wait this long then try again
+            :else :do (setf (in-use incoming-connection) t)
+                      (return t))
+      (unless (in-use incoming-connection)
+        (setf (in-use incoming-connection) t)
+        incoming-connection)))
 
 (defun release-incoming-connection (incoming-connection)
   (setf (in-use incoming-connection) nil)
   t)
-
-
 
 (defclass server ()
   ((%http-version
@@ -139,33 +158,6 @@ incoming-connection is in use already."
     :initarg :listening-socket))
   (:metaclass metalock:metalock))
 
-(defun make-server (&key (port 8080) (interface "0.0.0.0"))
-  (let ((server (make-instance 'server
-                               :port port :interface interface
-                               :listening-socket (usocket:socket-listen interface port
-                                                                        :reuse-address t
-                                                                        :reuseaddress t))))
-    (setf (con-receive-thread server)
-          (bt:make-thread (lambda () (get-connections server))))
-    ;; (serving-thread server)
-    ;; (bt:make-thread
-    ;;  (lambda () (loop (loop :for x :in (connections server)
-    ;;                    :do (service-incoming-connection server x))))))
-    server))
-
-(define-condition no-associated-handler ()
-  ((n-a-h-url
-    :initarg :n-a-h-url
-    :accessor n-a-h-url)
-   (n-a-h-http-method
-    :initarg :n-a-h-http-method
-    :accessor n-a-h-http-method)))
-
-(defmethod print-object ((obj no-associated-handler) stream)
-  (print-unreadable-object (obj stream :type t :identity t)
-    (format stream "Failed to find a handler for URL: ~S and METHOD: ~S~%"
-            (n-a-h-url obj)
-            (n-a-h-http-method obj))))
 
 (defmethod print-object ((obj http-response) stream)
   (flet ((fun ()
@@ -284,3 +276,43 @@ handled differently"))
         (fun)
         (print-unreadable-object (obj stream)
           (fun)))))
+
+
+
+;;;condtions
+
+(define-condition dirty-disconnect ()
+  ((d-d-con
+    :initarg :d-d-con
+    :accessor d-d-con))
+  (:documentation "Signalled when a client has closed a stream without sending a 'connection: close'"))
+
+(defmethod print-object ((obj dirty-disconnect) stream)
+  (print-unreadable-object (obj stream :type t :identity t)
+    (format stream "Connection ended incorrectly~%Connection: ~A~%"
+            (d-d-con obj))))
+
+(defun signal-dirty-disconnect (connection)
+  (error 'dirty-disconnect :d-d-con connection))
+
+(define-condition graceful-disconnect ()
+  ()
+  (:documentation "Signalled when a client sends a connectdion: close' header"))
+
+(defun signal-graceful-disconnect ()
+  (error 'graceful-disconnection))
+
+(define-condition no-associated-handler ()
+  ((n-a-h-url
+    :initarg :n-a-h-url
+    :accessor n-a-h-url)
+   (n-a-h-http-method
+    :initarg :n-a-h-http-method
+    :accessor n-a-h-http-method)))
+
+(defmethod print-object ((obj no-associated-handler) stream)
+  (print-unreadable-object (obj stream :type t :identity t)
+    (format stream "Failed to find a handler for URL: ~S and METHOD: ~S~%"
+            (n-a-h-url obj)
+            (n-a-h-http-method obj))))
+

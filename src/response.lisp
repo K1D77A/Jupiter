@@ -60,6 +60,8 @@ the response object using COOKIE as its value."
 
 (defun send-response (stream response)
   "Given a STREAM and a RESPONSE object this function will serialize RESPONSE and send it down STREAM."
+  (unless (open-stream-p stream)
+    (signal-dirty-disconnect stream))
   (let* ((headers (headers response))
          (nstream (make-string-output-stream))
          (body (body response))

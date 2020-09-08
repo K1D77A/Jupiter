@@ -15,6 +15,7 @@
                #:cl-mime-from-string
                #:trivial-backtrace
                #:percent-encoding
+               #:log4cl
                #:closer-mop
                #:cacle
                #:local-time)

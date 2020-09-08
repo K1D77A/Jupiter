@@ -1,6 +1,6 @@
 (in-package :jupiter)
 
-(defparameter *server* (make-server :port 9005))
+(defparameter *server* (make-server :port 9000))
 
 (define-handler *server* (:GET "/greetings")
                 (lambda (request response)
@@ -21,6 +21,17 @@
 (defparameter *vid-as-arr* (with-open-file
                                (s "../sausage-roll-d0.mp4" :element-type '(unsigned-byte 8))
                              (to-arr s)))
+
+(defparameter *favicon* (with-open-file
+                            (s "../favicon.ico" :element-type '(unsigned-byte 8))
+                          (to-arr s)))
+
+(define-handler *server* (:GET "/favicon.ico")
+                (lambda (request response)
+                  (declare (ignore request))
+                  (set-content-type response
+                                    (cl-mime-from-string:mime-type-from-string "../favicon.ico"))
+                  (setf (body response) *favicon*)))
 
 (define-handler *server* (:GET "/video")
                 (lambda (request response)

@@ -11,8 +11,7 @@
         sym
         (progn (push (cons header-string
                            (intern (string-upcase header-string)))
-                     *header-strings-as-symbols*)
-               (defmethod )
+                     *header-strings-as-symbols*)))))
 
 (defun http-char (c1 c2 &optional (default #\Space))
   (let ((code (parse-integer
@@ -137,6 +136,8 @@ Finally returns this packet."
 
 (defun read-line-until-CRLF (stream)
   (declare (optimize (speed 3) (safety 1)))
+  (unless (open-stream-p stream)
+    (signal-dirty-disconnect stream))
   (let ((list 
           (the list
                (loop :for byte := (read-byte stream nil)
@@ -162,6 +163,10 @@ and then return them all."
         (when cookies
           (mapcar #'to-cookie 
                   (mapcar #'parse-parameters (second cookies))))))))
+
+(defmethod wants-to-close-p ((request http-packet))
+  (when (string-equal (assoc 'CONNECTION (headers request)) "Close")
+    t))
 
 
 

@@ -2,6 +2,13 @@
 
 
 
+;;;this is another dead end, I think a better idea is to use (define-handler ..) to expand calls to
+;;;certain functions like '(age request)' to (second (assoc 'age (headers request) :test #'eq)) etc
+;;;and expand a (setf (age request) "zonk") to
+;;;(setf (second (assoc 'age (headers request) :test #'eq)) "zonk")
+;;;and do that by storing an association between certain symbols and expansions. could be fun
+
+
 
 (defmacro define-handler (server (method path) lambda)
   (check-type method http-method)
@@ -24,6 +31,13 @@
 (defun 404-handler (method url)
   (make-instance 'handler :response-body-func 
                  (lambda () (format t "404 not found~%URL: ~S~%METHOD: ~S~%" method url))
+                 :creation-time (time-now)
+                 :last-modified (time-now)))
+
+(defun timeout-handler ()
+  (make-instance 'handler
+                 :response-body-func
+                 (lambda () (format t "504 connection timed out"))
                  :creation-time (time-now)
                  :last-modified (time-now)))
 
