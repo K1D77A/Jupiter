@@ -10,6 +10,7 @@
   :depends-on (#:str
                #:usocket
                #:bordeaux-threads
+               #:queues.simple-cqueue
                #:metalock
                #:alexandria
                #:cl-mime-from-string

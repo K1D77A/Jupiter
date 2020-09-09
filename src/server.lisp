@@ -39,46 +39,40 @@
 
 (defparameter *errors* ())
 
-(defun cleanup-connections (server)
-  (with-accessors ((connections connections))
-      server
-    (when (connections server)
-      (let* ((to-shutdown (remove-if #'null connections :key #'deletep))
-             (to-keep (when to-shutdown (remove-if-not #'null connections :key #'deletep))))
-        (mapc (lambda (con);;close all of the connections
-                ;;might have to catch an error here not sure hence the lambda
-                (when (grab-incoming-connection con t);;make sure we block, this *has* to be done
-                  (usocket:socket-close (connection con))
-                  (release-incoming-connection con)));;should probably swap this to an actual lock
-              to-shutdown)
-        (when to-shutdown;;no point doing setf if nothing was yeeted
-          (setf connections to-keep))))))
+(defmacro grab-connection (connection block &body body)
+  (alexandria:with-gensyms (unlocked)
+    `(let ((,unlocked nil))
+       (when (grab-incoming-connection ,connection ,block)
+         (unwind-protect (locally ,@body)
+           (unless ,unlocked
+             (release-incoming-connection ,connection)))
+         (unless ,unlocked
+           (release-incoming-connection ,connection))))))
+
 
 (defun service-connections (server)
-  (loop :do (mapc (lambda (con)
-                    (when con
-                      (when (grab-incoming-connection con)
-                        (unwind-protect
-                             (handler-case
-                                 (if (timed-out-p con)
-                                     ;;need to check for a timeout,
-                                     ;;if it has then send a 'connection: close'
-                                     (progn
-                                       (log:info "Connection timed out ~A" con)
-                                       (shutdown-an-incoming-connection server con))
-                                     (service-incoming-connection server con))
-                               (dirty-disconnect (c)
-                                 (log:warn "Dirty disconnection by client: ~A" c)
-                                 (setf (deletep con) t));;mark the connection to be removed
-                               (graceful-disconnect ();;catch a client saying 'connection: close'
-                                 ;;or a timeout telling us its been handled properly and now should
-                                 ;;be removed
-                                 (setf (deletep con) t)));;meaning the client connection can be removed
-                          (release-incoming-connection con));;double unlock is fine
-                        (release-incoming-connection con))))
-                  (connections server))
-            (cleanup-connections server);;remove dead connections
-            (sleep 1)))
+  (with-accessors ((connections connections))
+      server
+    (do ((con (queues:qpop connections) (queues:qpop connections)));;returns nil if empty
+        (());;need a nice way to return
+      (when con
+        (grab-connection con nil;;dont block
+          (handler-case
+              (if (timed-out-p con)
+                  ;;need to check for a timeout,
+                  ;;if it has then send a 'connection: close'
+                  (progn
+                    (log:info "Connection timed out ~A" con)
+                    (shutdown-an-incoming-connection server con));;this will close the socket as well
+                  (progn (service-incoming-connection server con)
+                         (queues:qpush connections con)));;re-add con to the queue
+            (dirty-disconnect (c)
+              (log:warn "Dirty disconnection by client: ~A" c)) ;;don't re-add the con to the queue
+            (graceful-disconnect ()
+              (usocket:socket-close (connection con))))));;catch a client saying 'connection: close'
+      ;;or a timeout telling us its been handled properly and now should be removed
+      ;;meaning the client connection can be removed.
+      (sleep 0.0001))))
 
 (defun make-server (&key (port 8080) (interface "0.0.0.0"))
   (let ((server (make-instance 'server
@@ -97,11 +91,12 @@
   (with-accessors ((socket listening-socket)
                    (connections connections))
       server
-    (loop :for con := (usocket:socket-accept socket :element-type '(unsigned-byte 8))
-          :if (not (find con connections :test #'eq))
-            :do (log:info "Adding new connection: ~A to server: ~A" con server)
-                (push (make-instance 'incoming-connection :connection con) connections)
-          :else :do (sleep 0.0001))))
+    (do ((con (usocket:socket-accept socket :element-type '(unsigned-byte 8))
+              (usocket:socket-accept socket :element-type '(unsigned-byte 8))))
+        (());;need to come up with a nice way to stop threads
+      (log:info "Adding new connection: ~A to server: ~A" con server)
+      (queues:qpush connections (make-instance 'incoming-connection :connection con))
+      (sleep 0.0001))))
 
 (defmethod service-incoming-connection :before ((server server) con)
   (when (log:debug)
@@ -122,10 +117,11 @@
             (reset-last-used incoming-connection);;gotta make sure that the timeout is reset
             (serve server con-stream))))
     ((or end-of-file stream-error) ()
-      (signal-dirty-disconnect (con-stream incoming-connection)))))
-    ;;    (condition (c);;this'll do for now
-    ;;    (push c *errors*)
-  ;;  (trivial-backtrace:print-backtrace c :output *error-output*))))
+      (signal-dirty-disconnect (con-stream incoming-connection)))
+    (condition (c);;this'll do for now
+      (push c *errors*)
+      (log:error "Error: ~A" c)
+      (trivial-backtrace:print-backtrace c :output *error-output*))))
 
 (defmethod shutdown-an-incoming-connection ((server server) incoming-connection)
   "Given an INCOMING-CONNECTION object this will send a HTTP response object telling the client
@@ -135,6 +131,7 @@ to shutdown ie containing the header 'Connection: close'"
          (*standard-output* (body response)))
     (funcall (response-body-func handler))
     (send-response (con-stream incoming-connection) response)
+    (usocket:socket-close (connection incoming-connection))
     (signal-graceful-disconnect)));;we finish by telling the processor to delete the connection
 
 (defmethod serve ((server server) stream)

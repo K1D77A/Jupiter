@@ -93,9 +93,6 @@
     :accessor con-stream
     :initform nil
     :initarg :con-stream)
-   (%deletep
-    :accessor deletep
-    :initform nil)
    (%last-used
     :accessor last-used
     :type integer
@@ -127,39 +124,38 @@ incoming-connection is in use already."
   t)
 
 (defclass server ()
-  ((%http-version
-    :initform "HTTP/1.1"
-    :accessor http-version)
-   (%server-version
-    :initform (format nil "Jupiter/~A (~A ~A)"
-                      (asdf:component-version (asdf:find-system :jupiter))
-                      (asdf/common-lisp:lisp-implementation-type)
-                      (asdf/common-lisp:lisp-implementation-version))
-    :accessor server-version)
-   (%port
-    :accessor port
-    :initarg :port
-    :type integer
-    :initform 80)
-   (%connections
-    :accessor connections
-    :type list
-    :initform '())
-   (%interface
-    :accessor interface
-    :initarg :interface
-    :initform "0.0.0.0")
-   (%handlers
-    :accessor handlers
-    :initform (make-handlers-hash))
-   (%serving-thread
-    :accessor serving-thread)
-   (%con-receive-thread
-    :accessor con-receive-thread)
-   (%listening-socket
-    :accessor listening-socket
-    :initarg :listening-socket))
-  (:metaclass metalock:metalock))
+((%http-version
+  :initform "HTTP/1.1"
+  :accessor http-version)
+ (%server-version
+  :initform (format nil "Jupiter/~A (~A ~A)"
+                    (asdf:component-version (asdf:find-system :jupiter))
+                    (asdf/common-lisp:lisp-implementation-type)
+                    (asdf/common-lisp:lisp-implementation-version))
+  :accessor server-version)
+ (%port
+  :accessor port
+  :initarg :port
+  :type integer
+  :initform 80)
+ (%connections
+  :accessor connections
+  :type queues:simple-cqueue
+  :initform (queues:make-queue :simple-cqueue))
+ (%interface
+  :accessor interface
+  :initarg :interface
+  :initform "0.0.0.0")
+ (%handlers
+  :accessor handlers
+  :initform (make-handlers-hash))
+ (%serving-thread
+  :accessor serving-thread)
+ (%con-receive-thread
+  :accessor con-receive-thread)
+ (%listening-socket
+  :accessor listening-socket
+  :initarg :listening-socket)))
 
 
 (defmethod print-object ((obj http-response) stream)
