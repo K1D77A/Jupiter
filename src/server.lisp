@@ -40,6 +40,9 @@
           (usocket:socket-close (listening-socket server)))))
     (stop-threads server)))
 
+(defmethod stop-server :after ((server server))
+  (log:info "Successfully shutdown server"))
+
 (defparameter *errors* ())
 
 (defmacro grab-connection (connection block &body body)
@@ -125,11 +128,14 @@ and finish."
                    (connections connections)
                    (con-receive-thread con-receive-thread))
       server
-    (do ((con (usocket:socket-accept socket :element-type '(unsigned-byte 8))
-              (usocket:socket-accept socket :element-type '(unsigned-byte 8))))
+    (do ((con (timeout-body (1 nil)
+                (usocket:socket-accept socket :element-type '(unsigned-byte 8)))
+              (timeout-body (1 nil)
+                (usocket:socket-accept socket :element-type '(unsigned-byte 8)))))
         ((shutdownp con-receive-thread) t);;need to come up with a nice way to stop threads
-      (log:info "Adding new connection: ~A to server: ~A" con server)
-      (queues:qpush connections (make-instance 'incoming-connection :connection con))
+      (when con
+        (log:info "Adding new connection: ~A to server: ~A" con server)
+        (queues:qpush connections (make-instance 'incoming-connection :connection con)))
       (sleep 0.0001))))
 
 (defmethod service-incoming-connection :before ((server server) con)
