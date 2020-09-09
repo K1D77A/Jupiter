@@ -9,9 +9,9 @@
   (let ((sym (cdr (assoc header-string *header-strings-as-symbols* :test #'string=))))
     (if sym
         sym
-        (progn (push (cons header-string
-                           (intern (string-upcase header-string)))
-                     *header-strings-as-symbols*)))))
+        (let ((sym (intern (string-upcase header-string) :jupiter)))
+          (push (cons header-string sym) *header-strings-as-symbols*)
+          sym))))
 
 (defun http-char (c1 c2 &optional (default #\Space))
   (let ((code (parse-integer
@@ -164,12 +164,17 @@ and then return them all."
           (mapcar #'to-cookie 
                   (mapcar #'parse-parameters (second cookies))))))))
 
+(defparameter *packet* ())
+
 (defmethod wants-to-close-p ((request http-packet))
-  (when (string-equal (assoc 'CONNECTION (headers request)) "Close")
-    t))
-
-
-
+  "Checks if a packet has sent a Connection: close header or if it hasn't sent a Connection header at
+all then assume it wants to say open as per the HTTP 1.1 spec."
+  (with-accessors ((headers headers))
+      request
+    (push request *packet*)
+    (let ((con (assoc 'CONNECTION headers)))
+      (string-equal (first (second con)) "Close"))));;need to figure out something with the keep-alive
+;;header
 
 
 

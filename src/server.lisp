@@ -31,11 +31,14 @@
   (with-accessors ((serving-thread serving-thread)
                    (con-receive-thread con-receive-thread))
       server
-    (unwind-protect (mapc (lambda (a)
-                            (bt:destroy-thread a))
-                          (list con-receive-thread))
-      ;;this is just a shit solution for now, I will use a condition notify to tell them to quit
-      (usocket:socket-close (listening-socket server)))))
+    (let ((done nil))
+      (unwind-protect
+           (progn 
+             (usocket:socket-close (listening-socket server))
+             (setf done t))
+        (unless done 
+          (usocket:socket-close (listening-socket server)))))
+    (stop-threads server)))
 
 (defparameter *errors* ())
 
@@ -49,12 +52,17 @@
          (unless ,unlocked
            (release-incoming-connection ,connection))))))
 
+(defmethod push-queue (queue (con incoming-connection))
+  (queues:qpush queue con))
+(defmethod push-queue (queue con)
+  nil)
 
 (defun service-connections (server)
-  (with-accessors ((connections connections))
+  (with-accessors ((connections connections)
+                   (serving-thread serving-thread))
       server
     (do ((con (queues:qpop connections) (queues:qpop connections)));;returns nil if empty
-        (());;need a nice way to return
+        ((shutdownp serving-thread) t);;check if the thread has been told to stop
       (when con
         (grab-connection con nil;;dont block
           (handler-case
@@ -65,14 +73,39 @@
                     (log:info "Connection timed out ~A" con)
                     (shutdown-an-incoming-connection server con));;this will close the socket as well
                   (progn (service-incoming-connection server con)
-                         (queues:qpush connections con)));;re-add con to the queue
+                         (push-queue connections con)));;re-add con to the queue
             (dirty-disconnect (c)
               (log:warn "Dirty disconnection by client: ~A" c)) ;;don't re-add the con to the queue
             (graceful-disconnect ()
-              (usocket:socket-close (connection con))))));;catch a client saying 'connection: close'
+              (usocket:socket-close (connection con)))
+            (condition (c);;this'll do for now
+              (push c *errors*)
+              (log:error "Error: ~A" c)
+              (trivial-backtrace:print-backtrace c :output *error-output*)))));;catch a client saying 'connection: close'
       ;;or a timeout telling us its been handled properly and now should be removed
       ;;meaning the client connection can be removed.
       (sleep 0.0001))))
+
+(defmethod stop-threads :before ((server server))
+  (log:info "Stopping processing threads"))
+
+(defmethod stop-threads ((server server))
+  "Sets shutdownp within the servers thread-controllers to t, meaning the threads should see this
+and finish."
+  (setf (shutdownp (con-receive-thread server))
+        t)
+  (setf (shutdownp (serving-thread server))
+        t))
+
+(defmethod stop-threads :after ((server server))
+  (with-accessors ((con-receive-thread con-receive-thread)
+                   (serving-thread serving-thread))
+      server
+    (loop :if (and (not (bt:thread-alive-p (thread con-receive-thread)))
+                   (not (bt:thread-alive-p (thread serving-thread))))
+            :do (log:info "Processing threads safely shutdown")
+                (return t)
+          :else :do (sleep 0.001))))
 
 (defun make-server (&key (port 8080) (interface "0.0.0.0"))
   (let ((server (make-instance 'server
@@ -80,20 +113,21 @@
                                :listening-socket (usocket:socket-listen interface port
                                                                         :reuse-address t
                                                                         :reuseaddress t))))
-    (setf (con-receive-thread server)
+    (setf (thread (con-receive-thread server))
           (bt:make-thread (lambda () (get-connections server))))
-    (setf (serving-thread server)
+    (setf (thread (serving-thread server))
           (bt:make-thread
            (lambda () (service-connections server))))
     server))
 
 (defmethod get-connections ((server server))
   (with-accessors ((socket listening-socket)
-                   (connections connections))
+                   (connections connections)
+                   (con-receive-thread con-receive-thread))
       server
     (do ((con (usocket:socket-accept socket :element-type '(unsigned-byte 8))
               (usocket:socket-accept socket :element-type '(unsigned-byte 8))))
-        (());;need to come up with a nice way to stop threads
+        ((shutdownp con-receive-thread) t);;need to come up with a nice way to stop threads
       (log:info "Adding new connection: ~A to server: ~A" con server)
       (queues:qpush connections (make-instance 'incoming-connection :connection con))
       (sleep 0.0001))))
@@ -117,11 +151,7 @@
             (reset-last-used incoming-connection);;gotta make sure that the timeout is reset
             (serve server con-stream))))
     ((or end-of-file stream-error) ()
-      (signal-dirty-disconnect (con-stream incoming-connection)))
-    (condition (c);;this'll do for now
-      (push c *errors*)
-      (log:error "Error: ~A" c)
-      (trivial-backtrace:print-backtrace c :output *error-output*))))
+      (signal-dirty-disconnect (con-stream incoming-connection)))))
 
 (defmethod shutdown-an-incoming-connection ((server server) incoming-connection)
   "Given an INCOMING-CONNECTION object this will send a HTTP response object telling the client

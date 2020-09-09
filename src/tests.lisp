@@ -5,7 +5,12 @@
 (define-handler *server* (:GET "/greetings")
                 (lambda (request response)
                   (declare (ignore request response))
-                  (princ "beep")))
+                  (princ "Hello, World")))
+
+(define-handler *server* (:GET "/")
+                (lambda (request response)
+                  (declare (ignore request response))
+                  (princ "Hello, World")))
 
 (defun arr-to-file (file arr)
   (with-open-file (s file :direction :output :element-type '(unsigned-byte 8))

@@ -123,39 +123,51 @@ incoming-connection is in use already."
   (setf (in-use incoming-connection) nil)
   t)
 
+(defclass thread-controller ()
+  ((thread
+    :accessor thread
+    :type bt:thread)
+   (shutdownp
+    :accessor shutdownp
+    :type boolean
+    :initform nil))
+  (:metaclass metalock:metalock))
+
 (defclass server ()
-((%http-version
-  :initform "HTTP/1.1"
-  :accessor http-version)
- (%server-version
-  :initform (format nil "Jupiter/~A (~A ~A)"
-                    (asdf:component-version (asdf:find-system :jupiter))
-                    (asdf/common-lisp:lisp-implementation-type)
-                    (asdf/common-lisp:lisp-implementation-version))
-  :accessor server-version)
- (%port
-  :accessor port
-  :initarg :port
-  :type integer
-  :initform 80)
- (%connections
-  :accessor connections
-  :type queues:simple-cqueue
-  :initform (queues:make-queue :simple-cqueue))
- (%interface
-  :accessor interface
-  :initarg :interface
-  :initform "0.0.0.0")
- (%handlers
-  :accessor handlers
-  :initform (make-handlers-hash))
- (%serving-thread
-  :accessor serving-thread)
- (%con-receive-thread
-  :accessor con-receive-thread)
- (%listening-socket
-  :accessor listening-socket
-  :initarg :listening-socket)))
+  ((%http-version
+    :initform "HTTP/1.1"
+    :accessor http-version)
+   (%server-version
+    :initform (format nil "Jupiter/~A (~A ~A)"
+                      (asdf:component-version (asdf:find-system :jupiter))
+                      (asdf/common-lisp:lisp-implementation-type)
+                      (asdf/common-lisp:lisp-implementation-version))
+    :accessor server-version)
+   (%port
+    :accessor port
+    :initarg :port
+    :type integer
+    :initform 80)
+   (%connections
+    :accessor connections
+    :type queues:simple-cqueue
+    :initform (queues:make-queue :simple-cqueue))
+   (%interface
+    :accessor interface
+    :initarg :interface
+    :initform "0.0.0.0")
+   (%handlers
+    :accessor handlers
+    :initform (make-handlers-hash))
+   (%serving-thread
+    :initform (make-instance 'thread-controller)
+    :accessor serving-thread)
+   (%con-receive-thread
+    :initform (make-instance 'thread-controller)
+    :accessor con-receive-thread)
+   (%listening-socket
+    :accessor listening-socket
+    :initarg :listening-socket)))
 
 
 (defmethod print-object ((obj http-response) stream)
