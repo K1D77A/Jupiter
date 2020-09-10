@@ -1,14 +1,26 @@
 (in-package :jupiter)
 
 
+(defparameter *valid-methods*
+  (list :POST :GET :DELETE :HEAD :PUT :CONNECT :TRACE :OPTIONS :PATCH))
 
-;;;this is another dead end, I think a better idea is to use (define-handler ..) to expand calls to
-;;;certain functions like '(age request)' to (second (assoc 'age (headers request) :test #'eq)) etc
-;;;and expand a (setf (age request) "zonk") to
-;;;(setf (second (assoc 'age (headers request) :test #'eq)) "zonk")
-;;;and do that by storing an association between certain symbols and expansions. could be fun
+(defun valid-method-p (key)
+  (check-type key keyword)
+  (member key *valid-methods*))
 
+(deftype http-method () `(satisfies valid-method-p))
 
+(defun get-handler (server method url)
+  (check-type method http-method)
+  (let ((fun (gethash url (gethash method (handlers server)))))
+    (if fun
+        fun
+        (error 'no-associated-handler :n-a-h-url url :n-a-h-http-method method))))
+
+(defun set-handler (server method url handler)
+  (check-type handler handler)
+  (check-type method http-method)
+  (setf (gethash url (gethash method (handlers server))) handler))
 
 (defmacro define-handler (server (method path) lambda)
   (check-type method http-method)

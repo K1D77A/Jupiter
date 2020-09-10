@@ -2,28 +2,6 @@
 
 (in-package #:jupiter)
 
-
-(defparameter *valid-methods*
-  (list :POST :GET :DELETE :HEAD :PUT :CONNECT :TRACE :OPTIONS :PATCH))
-
-(defun valid-method-p (key)
-  (check-type key keyword)
-  (member key *valid-methods*))
-
-(deftype http-method () `(satisfies valid-method-p))
-
-(defun get-handler (server method url)
-  (check-type method http-method)
-  (let ((fun (gethash url (gethash method (handlers server)))))
-    (if fun
-        fun
-        (error 'no-associated-handler :n-a-h-url url :n-a-h-http-method method))))
-
-(defun set-handler (server method url handler)
-  (check-type handler handler)
-  (check-type method http-method)
-  (setf (gethash url (gethash method (handlers server))) handler))
-
 (defmethod stop-server :before ((server server))
   (log:info "Stopping server: ~A" server))
 
@@ -60,6 +38,8 @@
 (defmethod push-queue (queue con)
   nil)
 
+(defparameter *bad-packets* ())
+
 (defun service-connections (server)
   (with-accessors ((connections connections)
                    (serving-thread serving-thread))
@@ -81,10 +61,17 @@
               (log:warn "Dirty disconnection by client: ~A" c)) ;;don't re-add the con to the queue
             (graceful-disconnect ()
               (usocket:socket-close (connection con)))
+            (malformed-packet (c)
+              (push (m-p-packet c) *bad-packets*)
+              (log:error "Packet downloaded is bad see *bad-packets*"))
+            (parser-error (c)
+              (log:error "Error parsing packet. See condition name for details ~A" c))
             (condition (c);;this'll do for now
               (push c *errors*)
               (log:error "Error: ~A" c)
-              (trivial-backtrace:print-backtrace c :output *error-output*)))));;catch a client saying 'connection: close'
+              (trivial-backtrace:print-backtrace c :output *error-output*))
+            )))
+      ;;catch a client saying 'connection: close'
       ;;or a timeout telling us its been handled properly and now should be removed
       ;;meaning the client connection can be removed.
       (sleep 0.0001))))
@@ -170,14 +157,17 @@ to shutdown ie containing the header 'Connection: close'"
     (usocket:socket-close (connection incoming-connection))
     (signal-graceful-disconnect)));;we finish by telling the processor to delete the connection
 
+(defparameter *packetss* ())
+
 (defmethod serve ((server server) stream)
   "Given an instance of SERVER and a STREAM this function will attempt to parse a HTTP request from
 the STREAM and then call the associated handler."
   (let ((packet (parse-request stream)))
+    (push packet *packetss*)
     (with-accessors ((http-method http-method)
                      (path path))
         packet
-      (handler-case 
+      (handler-case
           (let* ((handler (get-handler server http-method path));;grab associated handler object
                  (response (make-http-response server handler :200));;create response object
                  ;;using the handler and the server to fill in headers
@@ -188,7 +178,7 @@ the STREAM and then call the associated handler."
             ;;call the handlers function where *standard-output* should be (body response)
             (send-response stream response);;send the collected down connection stream
             (when (wants-to-close-p packet);;tell the connection processor that we should shutdown
-              (signal-graceful-disconnect)));;the connection
+              (signal-graceful-disconnect)));;the connection            
         (no-associated-handler (c)
           (let* ((handler (404-handler http-method path))
                  (response (make-http-response server handler :404 :close t))

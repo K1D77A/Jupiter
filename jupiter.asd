@@ -17,6 +17,8 @@
                #:trivial-backtrace
                #:percent-encoding
                #:log4cl
+               #:lisp-unit
+               #:fast-io
                #:closer-mop
                #:cacle
                #:local-time)
@@ -27,4 +29,4 @@
                (:file "response")
                (:file "handlers")
                (:file "server")
-               (:file "tests")))
+               (:file "tests/tests")))

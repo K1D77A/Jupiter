@@ -327,3 +327,66 @@ handled differently"))
             (n-a-h-url obj)
             (n-a-h-http-method obj))))
 
+(define-condition malformed-packet ()
+  ((m-p-packet
+    :initarg :m-p-packet
+    :accessor m-p-packet)
+   (m-p-message
+    :initarg :m-p-message
+    :accessor m-p-message))
+  (:documentation "Signalled when a downloaded packet is not what is expected."))
+
+(defmethod print-object ((obj malformed-packet) stream)
+  (print-unreadable-object (obj stream :type t :identity t)
+    (format stream "Packet downloaded is malformed. Packet: ~S~%Message: ~A~%"
+            (m-p-packet obj)
+            (m-p-message obj))))
+
+(defun signal-malformed-packet (packet &optional message)
+  (error 'malformed-packet :m-p-message message :m-p-packet packet))
+
+(define-condition parser-error ()
+  ((p-e-message
+    :initarg :p-e-message
+    :type string
+    :accessor p-e-message)
+   (p-e-value
+    :initarg :p-e-value
+    :type t ;;take anything
+    :accessor p-e-value))
+  (:documentation "Signalled when an error has occurred when parsing from network"))
+
+(defmethod print-object ((obj parser-error) stream)
+  (print-unreadable-object (obj stream :type t :identity t)
+    (format stream "Failed to parse.~%Message: ~A~%Value: ~A~%"
+            (if (slot-boundp obj 'p-e-message)
+                (p-e-message obj)
+                "No message given")
+            (if (slot-boundp obj 'p-e-value)
+                (p-e-value obj)
+                "No value given"))))
+
+(define-condition invalid-request-line-method (parser-error)
+  ())
+
+(define-condition invalid-request-line-url (parser-error)
+  ())
+
+(define-condition invalid-request-line-version (parser-error)
+  ())
+
+(define-condition invalid-header-name (parser-error)
+  ())
+
+(define-condition invalid-header-vals (parser-error)
+  ())
+
+(define-condition end-of-headers ()
+  ())
+
+(define-condition whitespace-before-colon ()
+  ())
+
+
+
+

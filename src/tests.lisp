@@ -12,6 +12,14 @@
                   (declare (ignore request response))
                   (princ "Hello, World")))
 
+(defparameter *posts* ())
+
+(define-handler *server* (:POST "/post")
+                (lambda (request response)
+                  (declare (ignore response))
+                  (push request *posts*)
+                  (princ "Hello, World")))
+
 (defun arr-to-file (file arr)
   (with-open-file (s file :direction :output :element-type '(unsigned-byte 8))
     (dotimes (x (length arr))
@@ -46,7 +54,8 @@
                   (add-cookie response (make-cookie "goink" "ba z  nok"
                                                     :domain "/video" :comment "boink"
                                                     :encode t :http-only t))
-                  (get-cookies request)
+                  ;;  (get-cookies request);;i broke the cookies oof
+                  ;;need to implement the lazy parsing of parameters 
                   (setf (body response) *vid-as-arr*)
                   (set-content-type response (cl-mime-from-string:mime-type-from-string
                                               "../sausage-roll-d0.mp4"))))

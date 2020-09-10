@@ -1,5 +1,8 @@
 # Jupiter
 
+Currently has support for HTTP 1.1 persistent connections. 
+
+
 
 This is just a trivial HTTP server that I have made for the fun of it.
 My aim for Jupiter is that It's very user friendly. Here is a small example: 
