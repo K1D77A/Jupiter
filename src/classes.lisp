@@ -133,6 +133,37 @@ incoming-connection is in use already."
     :initform nil))
   (:metaclass metalock:metalock))
 
+(defclass serving-thread (thread-controller)
+  ((%connection-queue
+    :accessor connection-queue
+    :initform (queues:make-queue :simple-cqueue :minimum-size 1))
+   (%max-count
+    :accessor max-count
+    :initform 10)
+   (%current-count;;make sure when we don't push the con again that we decrement this!!
+    :accessor current-count
+    :initform 0))
+  (:metaclass metalock:metalock));;10 maximum conns at once
+
+(defclass thread-pool ()
+  ((%threads
+    :accessor threads
+    :type list
+    :initform ())
+   (%total-connections
+    :accessor total-connections
+    :type integer
+    :initform 0)))
+
+;;;I want to have a pool of threads starting with 1. Each thread will have its *own* connection queue
+;;;when the connection receiver gets a new connection it will pass one of these connections to a
+;;;single handler, each thread should handle roughly 10 connections each I reckon
+;;;and when they have less than 10 they will mark themselves as ready to receive more and how much
+;;;room they have
+;;;for the receiving thread I think it will randomly place them in available thread queues
+;;;and will have to manage starting up new threads when all the queues are full.
+;;;each thread will finish when its queue empties completely.
+
 (defclass server ()
   ((%http-version
     :initform "HTTP/1.1"
@@ -148,10 +179,6 @@ incoming-connection is in use already."
     :initarg :port
     :type integer
     :initform 80)
-   (%connections
-    :accessor connections
-    :type queues:simple-cqueue
-    :initform (queues:make-queue :simple-cqueue))
    (%interface
     :accessor interface
     :initarg :interface
@@ -159,15 +186,58 @@ incoming-connection is in use already."
    (%handlers
     :accessor handlers
     :initform (make-handlers-hash))
-   (%serving-thread
-    :initform (make-instance 'thread-controller)
-    :accessor serving-thread)
+   (%con-serve-pool
+    :initform (make-instance 'thread-pool)
+    :accessor con-serve-pool
+    :documentation "This is a pool of threads that are used to serve data to connections")
    (%con-receive-thread
     :initform (make-instance 'thread-controller)
     :accessor con-receive-thread)
    (%listening-socket
     :accessor listening-socket
     :initarg :listening-socket)))
+
+(defun make-serving-thread (server connection)
+  (let ((st (make-instance 'serving-thread)))
+    (push-queue (connection-queue st) connection)
+    (incf (current-count st))
+    (setf (thread st) (bt:make-thread (lambda () (service-connection-pool server st))))
+    st))
+
+(defmethod fullp ((serving-thread serving-thread))
+  (with-accessors ((c-c current-count)
+                   (m-c max-count))
+      serving-thread
+    (= c-c m-c)))
+
+(defmethod all-fullp ((thread-pool thread-pool))
+  (every #'fullp (threads thread-pool)))
+
+(defmethod emptyp ((serving-thread serving-thread))
+  (zerop (current-count serving-thread)))
+
+(defmethod get-first-with-free-space ((thread-pool thread-pool))
+  "Returns the first serving-thread within THREAD-POOL that has free space, if none do then signals 
+the condition 'no-empty-serving-threads."
+  (loop :for s-t :in (threads thread-pool)
+        :if (not (fullp s-t))
+          :do (return s-t)
+        :finally (error 'no-empty-serving-threads)))
+
+(defmethod create-and-add-new-serving-thread ((server server) connection)
+  (with-accessors ((pool con-serve-pool))
+      server
+    (let ((serving-thread (make-serving-thread server connection)))
+      (push serving-thread (threads pool))
+      (incf (total-connections pool)))))
+
+(defmethod add-connection-to-serving-thread ((serving-thread serving-thread) (server server) con)
+  (push-queue (connection-queue serving-thread) con)
+  (incf (current-count serving-thread))
+  (incf (total-connections server)))
+
+(defmethod remove-empty-serving-threads ((thread-pool thread-pool))
+  (setf (threads thread-pool) (remove-if #'emptyp (threads thread-pool))))
 
 
 (defmethod print-object ((obj http-response) stream)
@@ -385,6 +455,9 @@ handled differently"))
   ())
 
 (define-condition whitespace-before-colon ()
+  ())
+
+(define-condition no-empty-serving-threads ()
   ())
 
 

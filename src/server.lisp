@@ -40,11 +40,11 @@
 
 (defparameter *bad-packets* ())
 
-(defun service-connections (server)
-  (with-accessors ((connections connections)
-                   (serving-thread serving-thread))
-      server
-    (do ((con (queues:qpop connections) (queues:qpop connections)));;returns nil if empty
+(defun service-connection-pool (server serving-thread)
+  (with-accessors ((connections connection-queue))
+      serving-thread
+    (do ((con (queues:qpop connections) (queues:qpop connections))
+         (decrement nil nil));;returns nil if empty
         ((shutdownp serving-thread) t);;check if the thread has been told to stop
       (when con
         (grab-connection con nil;;dont block
@@ -53,6 +53,7 @@
                   ;;need to check for a timeout,
                   ;;if it has then send a 'connection: close'
                   (progn
+                    (setf decrement t)
                     (log:info "Connection timed out ~A" con)
                     (shutdown-an-incoming-connection server con));;this will close the socket as well
                   (progn (service-incoming-connection server con)
@@ -74,18 +75,20 @@
       ;;catch a client saying 'connection: close'
       ;;or a timeout telling us its been handled properly and now should be removed
       ;;meaning the client connection can be removed.
+      (when decrement
+        (decf (current-count serving-thread)))
       (sleep 0.0001))))
 
 (defmethod stop-threads :before ((server server))
   (log:info "Stopping processing threads"))
 
-(defmethod stop-threads ((server server))
-  "Sets shutdownp within the servers thread-controllers to t, meaning the threads should see this
-and finish."
-  (setf (shutdownp (con-receive-thread server))
-        t)
-  (setf (shutdownp (serving-thread server))
-        t))
+;; (defmethod stop-threads ((server server))
+;;   "Sets shutdownp within the servers thread-controllers to t, meaning the threads should see this
+;; and finish."
+;;   (setf (shutdownp (con-receive-thread server))
+;;         t)
+;;   (setf (shutdownp (serving-thread server))
+;;         t))
 
 (defmethod stop-threads :after ((server server))
   (with-accessors ((con-receive-thread con-receive-thread)
@@ -105,10 +108,23 @@ and finish."
                                                                         :reuseaddress t))))
     (setf (thread (con-receive-thread server))
           (bt:make-thread (lambda () (get-connections server))))
-    (setf (thread (serving-thread server))
-          (bt:make-thread
-           (lambda () (service-connections server))))
+    ;;(setf (thread (serving-thread server))
+    ;;    (bt:make-thread
+    ;;    (lambda () (service-connections server))))
     server))
+
+(defmethod add-new-connection ((server server) con)
+  "Given a new connection this will handle adding a new connection to a serving-thread. 
+First it checks if any serving-threads have free space, if they do it will put this new connection 
+in that queue, else it will create a new serving-thread, place it in the pool and give it this 
+new connection."
+  (with-accessors ((pool con-serve-pool))
+      server
+    (handler-case
+        (let ((free-space (get-first-with-free-space pool)))
+          (add-connection-to-serving-thread free-space server con))
+      (no-empty-serving-threads ()
+        (create-and-add-new-serving-thread server con)))))
 
 (defmethod get-connections ((server server))
   (with-accessors ((socket listening-socket)
@@ -122,7 +138,7 @@ and finish."
         ((shutdownp con-receive-thread) t);;need to come up with a nice way to stop threads
       (when con
         (log:info "Adding new connection: ~A to server: ~A" con server)
-        (queues:qpush connections (make-instance 'incoming-connection :connection con)))
+        (add-new-connection server (make-instance 'incoming-connection :connection con)))
       (sleep 0.0001))))
 
 (defmethod service-incoming-connection :before ((server server) con)

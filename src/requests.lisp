@@ -184,8 +184,7 @@ ARRAY. If there is a failure then returns an empty octet-array"
                   :p-e-message "Failed to download and parse a headers field-name in download-header"))
          (if (= (aref header-name (- pos 2)) 32);;checking if whitespace before : (i think)
              (error 'whitespace-before-colon)
-             (setf header-name (subseq header-name 0 pos))))
-      
+             (setf header-name (subseq header-name 0 pos))))      
       (when (and (= byte 13)(zerop pos));;check for a newline
         (error 'end-of-headers));;handle the newline by signalling a condition
       (if (= byte 13)
@@ -230,7 +229,7 @@ ARRAY. If there is a failure then returns an empty octet-array"
 (defparameter *requests* ())
 
 (defmethod get-content-length ((http http-packet))
-  (let ((len (second (assoc 'content-length (headers http)))))
+  (let ((len (cdr (assoc 'content-length (headers http)))))
     (when len       
       (parse-integer (first len)))))
 
