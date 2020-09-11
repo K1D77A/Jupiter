@@ -28,3 +28,7 @@
                    ,@body)
      (condition ()
        ,endval)))
+
+(defun clean-string (string)
+  "removes #\Space 's from the start of a string"
+  (subseq string (position-if-not (lambda (c) (char= #\Space c)) string)))

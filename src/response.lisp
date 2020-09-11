@@ -47,6 +47,53 @@
   (setf (second (assoc "Content-Type" (headers response) :test #'string-equal))
         new-content-type))
 
+(defclass http-response ()
+  ((%http-version
+    :type string
+    :initarg :http-version
+    :accessor http-version)
+   (%status-code
+    :type keyword
+    :initarg :status-code
+    :accessor status-code)
+   (%headers
+    :type list
+    :initarg :headers
+    :accessor headers)
+   (%body
+    :type (or stream array)
+    :initform (make-string-output-stream)
+    :accessor body))
+  (:documentation "A class used to create the headers for a response that are sent to a requester"))
+
+(defun make-http-response (server handler status-code &key (close nil))
+  (let ((headers (list (list "Date" (time-now))
+                       (list "Server" (server-version server))
+                       (list "Last-Modified" (last-modified handler))
+                       (list "Connection" (if close
+                                              "close"
+                                              "keep-alive"))
+                       (list "Content-Type" "text/html"))))
+    (make-instance 'http-response
+                   :headers headers
+                   :status-code status-code
+                   :http-version (http-version server))))
+
+
+(defmethod print-object ((obj http-response) stream)
+  (flet ((fun ()
+           (response-format stream "~A ~A"
+                            (http-version obj)
+                            (code->status (status-code obj)))
+           (mapc (lambda (lst)
+                   (serialize-header stream (first lst) (second lst)))
+                 (headers obj))
+           (response-format stream "")));;important to add a CRLF before body
+    (if *print-readably*
+        (fun)
+        (print-unreadable-object (obj stream)
+          (fun)))))
+
 (defmethod add-cookie ((response http-response) (cookie cookie))
   "Given a RESPONSE object this will add a Set-Cookie header to 
 the response object using COOKIE as its value."
@@ -56,7 +103,6 @@ the response object using COOKIE as its value."
           (append headers (list (list "Set-Cookie" cookie))))))
 ;;;need to encode any spaces... https://en.wikipedia.org/wiki/Percent-encoding
 ;;;well don't have to can just tell the user than no effort is made to perform percent encoding
-
 
 (defun send-response (stream response)
   "Given a STREAM and a RESPONSE object this function will serialize RESPONSE and send it down STREAM."
@@ -88,3 +134,18 @@ the response object using COOKIE as its value."
   (locally (declare (optimize (speed 3) (safety 1)))
     (let ((ar (make-array (length (the string string)) :element-type '(unsigned-byte 8))))
       (map-into ar #'char-code string))))
+
+
+(defgeneric serialize-header (stream key val)
+  (:documentation "Need a way to conditionally serialize parts of headers because sometimes the val
+of a header isn't just a normal number but a complex object like a cookie, these have to be 
+handled differently"))
+
+(defmethod serialize-header (stream key (val cookie))  
+  (format stream "~A:" key)
+  (print-object val stream)
+  (response-format stream "") ;;add the CRLF on the end
+  )
+
+(defmethod serialize-header (stream key val)
+  (response-format stream "~A: ~A" key val))

@@ -1,6 +1,98 @@
-;;;; jupiter.lisp
-
 (in-package #:jupiter)
+
+(defclass server ()
+  ((%http-version
+    :initform "HTTP/1.1"
+    :accessor http-version)
+   (%server-version
+    :initform (format nil "Jupiter/~A (~A ~A)"
+                      (asdf:component-version (asdf:find-system :jupiter))
+                      (asdf/common-lisp:lisp-implementation-type)
+                      (asdf/common-lisp:lisp-implementation-version))
+    :accessor server-version)
+   (%port
+    :accessor port
+    :initarg :port
+    :type integer
+    :initform 80)
+   (%interface
+    :accessor interface
+    :initarg :interface
+    :initform "0.0.0.0")
+   (%handlers
+    :accessor handlers
+    :initform (make-handlers-hash))
+   (%con-serve-pool
+    :initform (make-instance 'thread-pool)
+    :accessor con-serve-pool
+    :documentation "This is a pool of threads that are used to serve data to connections")
+   (%con-receive-thread
+    :initform (make-instance 'thread-controller)
+    :accessor con-receive-thread)
+   (%listening-socket
+    :accessor listening-socket
+    :initarg :listening-socket)))
+
+(defclass incoming-connection ()
+  ((%connection
+    :accessor connection
+    :initarg :connection)
+   (%timeout
+    :accessor timeout
+    :initform 15
+    :type integer)
+   (%in-use
+    :accessor in-use
+    :initform nil
+    :type boolean)
+   (%con-stream
+    :accessor con-stream
+    :initform nil
+    :initarg :con-stream)
+   (%last-used
+    :accessor last-used
+    :type integer
+    :initform (get-universal-time)))
+  (:metaclass metalock:metalock))
+
+(defun grab-incoming-connection (incoming-connection &optional (block nil))
+  "Returns either nil or the incoming-connection, if nil is returned it means that the 
+incoming-connection is in use already."
+  (if block
+      (loop :for in-use := (in-use incoming-connection)
+            :if in-use
+              :do (sleep 0.00001);;wait this long then try again
+            :else :do (setf (in-use incoming-connection) t)
+                      (return t))
+      (unless (in-use incoming-connection)
+        (setf (in-use incoming-connection) t)
+        incoming-connection)))
+
+(defun release-incoming-connection (incoming-connection)
+  (setf (in-use incoming-connection) nil)
+  t)
+
+(define-condition dirty-disconnect ()
+  ((d-d-con
+    :initarg :d-d-con
+    :accessor d-d-con))
+  (:documentation "Signalled when a client has closed a stream without sending a 'connection: close'"))
+
+(defmethod print-object ((obj dirty-disconnect) stream)
+  (print-unreadable-object (obj stream :type t :identity t)
+    (format stream "Connection ended incorrectly~%Connection: ~A~%"
+            (d-d-con obj))))
+
+(defun signal-dirty-disconnect (connection)
+  (error 'dirty-disconnect :d-d-con connection))
+
+(define-condition graceful-disconnect ()
+  ()
+  (:documentation "Signalled when a client sends a connectdion: close' header"))
+
+(defun signal-graceful-disconnect ()
+  (error 'graceful-disconnect))
+
 
 (defmethod stop-server :before ((server server))
   (log:info "Stopping server: ~A" server))
@@ -47,30 +139,29 @@
          (decrementp t t));;assume a failure
         ((shutdownp serving-thread) t);;check if the thread has been told to stop
       (when con
-        (grab-connection con nil;;dont block
-          (handler-case
-              (if (timed-out-p con)
-                  ;;need to check for a timeout,
-                  ;;if it has then send a 'connection: close'
-                  (progn
-                    (log:info "Connection timed out ~A" con)
-                    (shutdown-an-incoming-connection server con));;this will close the socket as well
-                  (progn (service-incoming-connection server con)
-                         (setf decrementp nil);;no failure so don't decrement
-                         (push-queue connections con)));;re-add con to the queue
-            (dirty-disconnect (c)
-              (log:warn "Dirty disconnection by client: ~A" c)) ;;don't re-add the con to the queue
-            (graceful-disconnect ()
-              (usocket:socket-close (connection con)))
-            (malformed-packet (c)
-              (push (m-p-packet c) *bad-packets*)
-              (log:error "Packet downloaded is bad see *bad-packets*"))
-            (parser-error (c)
-              (log:error "Error parsing packet. See condition name for details ~A" c))
-            (condition (c);;this'll do for now
-              (push c *errors*)
-              (log:error "Error: ~A" c)
-              (trivial-backtrace:print-backtrace c :output *error-output*)))))
+        (handler-case
+            (if (timed-out-p con)
+                ;;need to check for a timeout,
+                ;;if it has then send a 'connection: close'
+                (progn
+                  (log:info "Connection timed out ~A" con)
+                  (shutdown-an-incoming-connection server con));;this will close the socket as well
+                (progn (service-incoming-connection server con)
+                       (setf decrementp nil);;no failure so don't decrement
+                       (push-queue connections con)));;re-add con to the queue
+          (dirty-disconnect (c)
+            (log:warn "Dirty disconnection by client: ~A" c)) ;;don't re-add the con to the queue
+          (graceful-disconnect ()
+            (usocket:socket-close (connection con)))
+          (malformed-packet (c)
+            (push (m-p-packet c) *bad-packets*)
+            (log:error "Packet downloaded is bad see *bad-packets*"))
+          (parser-error (c)
+            (log:error "Error parsing packet. See condition name for details ~A" c))
+          (condition (c);;this'll do for now
+            (push c *errors*)
+            (log:error "Error: ~A" c)
+            (trivial-backtrace:print-backtrace c :output *error-output*))))
       ;;catch a client saying 'connection: close'
       ;;or a timeout telling us its been handled properly and now should be removed
       ;;meaning the client connection can be removed.
@@ -169,13 +260,17 @@ new connection."
 (defmethod shutdown-an-incoming-connection ((server server) incoming-connection)
   "Given an INCOMING-CONNECTION object this will send a HTTP response object telling the client
 to shutdown ie containing the header 'Connection: close'"
-  (let* ((handler (timeout-handler))
-         (response (make-http-response server handler :504 :close t))
-         (*standard-output* (body response)))
-    (funcall (response-body-func handler))
-    (send-response (con-stream incoming-connection) response)
-    (usocket:socket-close (connection incoming-connection))
-    (signal-graceful-disconnect)));;we finish by telling the processor to delete the connection
+  (with-accessors ((con-stream con-stream))
+      incoming-connection
+    (if con-stream 
+        (let* ((handler (timeout-handler))
+               (response (make-http-response server handler :504 :close t))
+               (*standard-output* (body response)))
+          (funcall (response-body-func handler))
+          (send-response con-stream response)
+          (usocket:socket-close (connection incoming-connection))
+          (signal-graceful-disconnect))
+        (signal-dirty-disconnect))));;we finish by telling the processor to delete the connection
 
 (defparameter *packetss* ())
 

@@ -54,7 +54,7 @@
                   (add-cookie response (make-cookie "goink" "ba z  nok"
                                                     :domain "/video" :comment "boink"
                                                     :encode t :http-only t))
-                  ;;  (get-cookies request);;i broke the cookies oof
+                  (get-cookies request)
                   ;;need to implement the lazy parsing of parameters 
                   (setf (body response) *vid-as-arr*)
                   (set-content-type response (cl-mime-from-string:mime-type-from-string

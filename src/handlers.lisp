@@ -4,6 +4,50 @@
 (defparameter *valid-methods*
   (list :POST :GET :DELETE :HEAD :PUT :CONNECT :TRACE :OPTIONS :PATCH))
 
+
+(defclass handler ()
+  ((%creation-time
+    :initarg :creation-time
+    :accessor creation-time
+    :type string)
+   (%last-modified
+    :initarg :last-modified
+    :accessor last-modified
+    :type string)
+   (%response-body-func
+    :initarg :response-body-func
+    :type function
+    :accessor response-body-func)))
+
+(define-condition no-associated-handler ()
+  ((n-a-h-url
+    :initarg :n-a-h-url
+    :accessor n-a-h-url)
+   (n-a-h-http-method
+    :initarg :n-a-h-http-method
+    :accessor n-a-h-http-method)))
+
+(defmethod print-object ((obj no-associated-handler) stream)
+  (print-unreadable-object (obj stream :type t :identity t)
+    (format stream "Failed to find a handler for URL: ~S and METHOD: ~S~%"
+            (n-a-h-url obj)
+            (n-a-h-http-method obj))))
+
+(defun make-handlers-hash ()
+  (let ((hash-table (make-hash-table :test #'eq)))
+    (mapcar (lambda (method)
+              (setf (gethash method hash-table)
+                    (make-hash-table :test #'equalp)))
+            *valid-methods*)
+    hash-table))
+
+(defmethod timed-out-p ((con incoming-connection))
+  (let ((now (get-universal-time)))
+    (<= (timeout con) (- now (last-used con)))))
+
+(defmethod reset-last-used ((con incoming-connection))
+  (setf (last-used con) (get-universal-time)))
+
 (defun valid-method-p (key)
   (check-type key keyword)
   (member key *valid-methods*))

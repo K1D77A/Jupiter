@@ -5,7 +5,7 @@
   :author "K1D77A"
   :license  "MIT"
   :version "0.0.2"
-  :serial t
+  :serial nil
   :pathname "src/"
   :depends-on (#:str
                #:usocket
@@ -24,9 +24,10 @@
                #:local-time)
   :components ((:file "package")
                (:file "helpers")
-               (:file "classes")
                (:file "requests")
-               (:file "response")
-               (:file "handlers")
+               (:file "cookies")
                (:file "server")
+               (:file "threads")
+               (:file "response")               
+               (:file "handlers")
                (:file "tests/tests")))
