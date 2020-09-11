@@ -2,6 +2,21 @@
 
 Currently has support for HTTP 1.1 persistent connections. 
 
+# Notes
+
+(things I've broken)
+The new parser doesn't parse parameters in the URL for GET requests (yet) I will have to write a 
+new parser for getting these values if I detect them
+The new parser doesn't parse post parameters yet, but this is easy as a parser exists I just
+haven't jammed it in yet.
+Currently no headers are decoded beyond being placed in an alist. I don't think I'm going to bother
+parsing them all, I will just parse important headers when they are used. This is how (get-cookies ..)
+currently works, you call (get-cookies ..) and the cookies are parsed and cookie objects are created
+and then placed in the alist. There is no point wasting time parsing most of these headers when
+i'm not going to be supporting them (for now).
+Cookies are working.
+No sessions yet.
+
 
 
 This is just a trivial HTTP server that I have made for the fun of it.
