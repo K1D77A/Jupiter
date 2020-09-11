@@ -139,7 +139,8 @@ incoming-connection is in use already."
     :initform (queues:make-queue :simple-cqueue :minimum-size 1))
    (%max-count
     :accessor max-count
-    :initform 10)
+    :initform 3);;this seems to be the optimal, however I don't think the queue
+   ;;is the most optimal way of doing this
    (%current-count;;make sure when we don't push the con again that we decrement this!!
     :accessor current-count
     :initform 0))
@@ -234,7 +235,7 @@ the condition 'no-empty-serving-threads."
 (defmethod add-connection-to-serving-thread ((serving-thread serving-thread) (server server) con)
   (push-queue (connection-queue serving-thread) con)
   (incf (current-count serving-thread))
-  (incf (total-connections server)))
+  (incf (total-connections (con-serve-pool server))))
 
 (defmethod remove-empty-serving-threads ((thread-pool thread-pool))
   (setf (threads thread-pool) (remove-if #'emptyp (threads thread-pool))))
