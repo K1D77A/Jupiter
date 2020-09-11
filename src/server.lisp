@@ -44,7 +44,7 @@
   (with-accessors ((connections connection-queue))
       serving-thread
     (do ((con (queues:qpop connections) (queues:qpop connections))
-         (decrement nil nil));;returns nil if empty
+         (decrementp t t));;assume a failure
         ((shutdownp serving-thread) t);;check if the thread has been told to stop
       (when con
         (grab-connection con nil;;dont block
@@ -53,10 +53,10 @@
                   ;;need to check for a timeout,
                   ;;if it has then send a 'connection: close'
                   (progn
-                    (setf decrement t)
                     (log:info "Connection timed out ~A" con)
                     (shutdown-an-incoming-connection server con));;this will close the socket as well
                   (progn (service-incoming-connection server con)
+                         (setf decrementp nil);;no failure so don't decrement
                          (push-queue connections con)));;re-add con to the queue
             (dirty-disconnect (c)
               (log:warn "Dirty disconnection by client: ~A" c)) ;;don't re-add the con to the queue
@@ -70,13 +70,20 @@
             (condition (c);;this'll do for now
               (push c *errors*)
               (log:error "Error: ~A" c)
-              (trivial-backtrace:print-backtrace c :output *error-output*))
-            )))
+              (trivial-backtrace:print-backtrace c :output *error-output*)))))
       ;;catch a client saying 'connection: close'
       ;;or a timeout telling us its been handled properly and now should be removed
       ;;meaning the client connection can be removed.
-      (when decrement
-        (decf (current-count serving-thread)))
+      (when (and con decrementp)
+        (with-accessors ((current-count current-count)
+                         (shutdownp shutdownp))
+            serving-thread
+          (decrease-connection-count server serving-thread)
+          (when (zerop current-count)
+            ;;perhaps we could get this remove itself
+            (remove-empty-serving-threads (con-serve-pool server))
+            ;;perhaps I want to keep say 5 threads around at all times.
+            (setf shutdownp t))));;queue is empty so shutdown
       (sleep 0.0001))))
 
 (defmethod stop-threads :before ((server server))
@@ -108,9 +115,6 @@
                                                                         :reuseaddress t))))
     (setf (thread (con-receive-thread server))
           (bt:make-thread (lambda () (get-connections server))))
-    ;;(setf (thread (serving-thread server))
-    ;;    (bt:make-thread
-    ;;    (lambda () (service-connections server))))
     server))
 
 (defmethod add-new-connection ((server server) con)

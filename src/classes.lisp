@@ -240,6 +240,10 @@ the condition 'no-empty-serving-threads."
 (defmethod remove-empty-serving-threads ((thread-pool thread-pool))
   (setf (threads thread-pool) (remove-if #'emptyp (threads thread-pool))))
 
+(defmethod decrease-connection-count ((server server)(serving-thread serving-thread))
+  (decf (current-count serving-thread))
+  (decf (total-connections (con-serve-pool server))))
+
 
 (defmethod print-object ((obj http-response) stream)
   (flet ((fun ()
