@@ -270,7 +270,7 @@ to shutdown ie containing the header 'Connection: close'"
           (send-response con-stream response)
           (usocket:socket-close (connection incoming-connection))
           (signal-graceful-disconnect))
-        (signal-dirty-disconnect))));;we finish by telling the processor to delete the connection
+        (signal-dirty-disconnect incoming-connection))));;we finish by telling the processor to delete the connection
 
 (defparameter *packetss* ())
 
@@ -278,7 +278,7 @@ to shutdown ie containing the header 'Connection: close'"
   "Given an instance of SERVER and a STREAM this function will attempt to parse a HTTP request from
 the STREAM and then call the associated handler."
   (let ((packet (parse-request stream)))
-    (push packet *packetss*)
+    ;; (push packet *packetss*)
     (with-accessors ((http-method http-method)
                      (path path))
         packet

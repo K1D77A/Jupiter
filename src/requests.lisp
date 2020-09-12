@@ -9,6 +9,9 @@
 (defconstant +space+ (the (integer 0 255) 32))
 (defconstant +colon+ (the (integer 0 255) 58))
 (defconstant +htab+ (the (integer 0 255) 9))
+(defconstant +equals+ (the (integer 0 255) 61))
+(defconstant +plus+ (the (integer 0 255) 43))
+
 (defconstant +field-size-restriction+ (the (integer 0 512) 512))
 
 (defclass http-packet ()
@@ -112,6 +115,13 @@
        (= ,var 30)
        (= ,var 31)))
 
+(defmacro query-split-p (var)
+  `(or (= ,var 38)
+       (= ,var 59)))
+
+(defmacro %-encoded-p (var)
+  `(= ,var 37))
+
 (defun header-string->symbol (header-string)
   (check-type header-string string)
   (locally (declare (optimize (speed 3) (safety 1)))
@@ -154,8 +164,9 @@
 
 (defun decode-parameters (param)
   (let ((replaced (str:replace-all "+" " " param)))
-    (when (find #\% replaced :test #'char=)
-      (percent-encoding:decode replaced))))
+    (if (find #\% replaced :test #'char=)
+        (percent-encoding:decode replaced)
+        replaced)))
 
 (defun parse-parameters (param-string)
   (mapcar (lambda (params)
@@ -164,8 +175,59 @@
                     (decode-parameters (second split)))))
           (str:split "&" param-string)))
 
-(defmacro f-w-b (byte buffer)
-  `(fast-io:fast-write-byte ,byte ,buffer))
+;;;want the output to look like this ((FIELD1 ("val1" "val2" "val3")(FIELD2 ...))) etc
+;;;
+;;;parsing each one they should set a flag to say they need to be percentage decoded
+
+(defun reversed-char-list-to-symbol (char-list)
+  (intern  (coerce (reverse char-list) 'string) :jupiter))
+(defun reversed-char-list-to-string (char-list)
+  (coerce (reverse char-list) 'string))
+
+(defun download-get-query-string (stream)
+  "Given a stream whose next byte is the start of a query string this will parse the string into an 
+alist"
+  (do ((byte (read-byte stream nil)(read-byte stream nil))
+       (result-list nil)
+       (write-variable-p t)
+       (variable nil)
+       (values-accumulator nil)
+       (values nil))
+      ((or (null byte)(= byte +space+))
+       (if values-accumulator
+           (progn 
+             (push (reversed-char-list-to-string values) values-accumulator)
+             (push (list (reversed-char-list-to-symbol variable) values-accumulator) result-list))
+           (push (list (reversed-char-list-to-symbol variable)
+                       (reversed-char-list-to-string values))
+                 result-list))
+       result-list)
+    (cond ((= byte +equals+);;if its an = then it changes from variable to value
+           (setf write-variable-p nil));; change to write to value
+          ((= byte +plus+);;if its a plus then we have more values 
+           (push (reversed-char-list-to-string values) values-accumulator)
+           (setf values nil))
+          ((query-split-p byte)
+           (setf write-variable-p t)
+           (if values-accumulator
+               (progn 
+                 (push  (reversed-char-list-to-string values) values-accumulator)
+                 (push (list (reversed-char-list-to-symbol variable) values-accumulator) result-list))
+               (push (list (reversed-char-list-to-symbol variable)
+                           (list (reversed-char-list-to-string values)))
+                     result-list))
+           (setf values-accumulator nil)
+           (setf variable nil)
+           (setf values nil))
+          (t (if write-variable-p
+                 (push (char-upcase (code-char byte)) variable)
+                 (push (code-char byte) values))))))
+           
+      
+       
+
+  (defmacro f-w-b (byte buffer)
+    `(fast-io:fast-write-byte ,byte ,buffer))
 
 (defmacro octet-array (length)
   `(fast-io:make-octet-vector ,length))

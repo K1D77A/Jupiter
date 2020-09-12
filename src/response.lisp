@@ -79,7 +79,6 @@
                    :status-code status-code
                    :http-version (http-version server))))
 
-
 (defmethod print-object ((obj http-response) stream)
   (flet ((fun ()
            (response-format stream "~A ~A"
