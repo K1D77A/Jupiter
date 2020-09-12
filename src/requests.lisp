@@ -196,16 +196,18 @@ it signals 'invalid-request-line-url"
 (defun parser-list-to-string (char-list)
   (parser-percent-decode (coerce (reverse char-list) 'string)))
 
-(defun download-get-query-string (stream)
+(defun download-query-string (stream &optional (length nil))
   "Given a stream whose next byte is the start of a query string this will parse the string into an 
 alist"
-  (do ((byte (read-byte stream nil)(read-byte stream nil))
+  (do ((byte (read-byte stream)(read-byte stream))
        (result-list nil)
        (write-variable-p t)
        (variable nil)
+       (len 0 (1+ len))
        (values-accumulator nil)
        (values nil))
-      ((= byte +space+)
+      ((or (= byte +space+)
+           (equal len (1- length)))
        (if values-accumulator
            (progn 
              (push (parser-list-to-string values) values-accumulator)
@@ -238,7 +240,7 @@ alist"
 (defmacro f-w-b (byte buffer)
   `(fast-io:fast-write-byte ,byte ,buffer))
 
-(defmacro octet-array (length)
+(defmacro octet-array (length);;should remove this dependency
   `(fast-io:make-octet-vector ,length))
 
 (defun read-until-and-into-buff (stream until array &optional (max 2048))
@@ -248,24 +250,21 @@ ARRAY. If there is a failure then returns an empty octet-array"
   (check-type array array)
   (check-type max fixnum)
   (check-type stream stream)
-  (handler-case 
-      (locally
-          (declare (optimize (speed 3) (safety 0));;we do type checks above
-                   (type fixnum max)
-                   (type fast-io:octet-vector array)
-                   (type fast-io:octet until))
-        (do ((byte (read-byte stream)(read-byte stream))
-             (max max (1- (the fixnum max)))
-             (pos (the fixnum 0) (the fixnum (1+ (the fixnum pos)))))
-            ((or (= until byte) (= 0 max))
-             (if (= until byte)
-                 (subseq array 0 pos)
-                 (octet-array 0)))
-          (if (or (= byte +return+) (= byte +newline+));;ignore newlines or carriage returns.
-              (decf (the fixnum pos))
-              (setf (aref array pos) byte))))
-    (end-of-file ()
-      (octet-array 0))))
+  (locally
+      (declare (optimize (speed 3) (safety 0));;we do type checks above
+               (type fixnum max)
+               (type fast-io:octet-vector array)
+               (type fast-io:octet until))
+    (do ((byte (read-byte stream)(read-byte stream))
+         (max max (1- (the fixnum max)))
+         (pos (the fixnum 0) (the fixnum (1+ (the fixnum pos)))))
+        ((or (= until byte) (= 0 max))
+         (if (= until byte)
+             (subseq array 0 pos)
+             (octet-array 0)))
+      (if (or (= byte +return+) (= byte +newline+));;ignore newlines or carriage returns.
+          (decf (the fixnum pos))
+          (setf (aref array pos) byte)))));;deleted an old end-of-file
 
 (defun parse-request-line-url (stream)
   (check-type stream stream)
@@ -281,16 +280,14 @@ ARRAY. If there is a failure then returns an empty octet-array"
                  (= byte +questionmark+))
              (if (= byte +questionmark+)
                  ;;this means that we now have started the query-string
-                 (let ((query-string-list (download-get-query-string stream)))
+                 (let ((query-string-list (download-query-string stream)))
                    (values query-string-list  (subseq array 0 pos)))
                  (if (= +space+ byte)
                      (values nil (subseq array 0 pos))
                      (octet-array 0))))
           (if (or (= byte +return+) (= byte +newline+));;ignore newlines or carriage returns.
               (decf (the fixnum pos))
-              (setf (aref array pos) byte))))
-    (end-of-file ()
-      (octet-array 0))))
+              (setf (aref array pos) byte))))))
 
 (defun empty-array-p (array)
   (zerop (length array)))
@@ -330,39 +327,6 @@ ARRAY. If there is a failure then returns an empty octet-array"
             http-version (octet-array-to-string http-ver))
       http)))
 
-;; (defmethod parse-request-line2 ((http http-packet) request-line)
-;;   (let ((words (str:words request-line)))
-;;     (destructuring-bind (one two three)
-;;         words
-;;       (let ((split (str:split "?" two)))
-;;         (with-accessors ((http-method http-method)
-;;                          (path path)
-;;                          (parameters parameters)
-;;                          (http-version http-version))
-;;             http
-;;           (setf http-method (determine-http-method one)
-;;                 path (first split)
-;;                 parameters (parse-parameters (second split))
-;;                 http-version three)
-;;           (unless (keywordp http-method)
-;;             (signal-malformed-packet http "http-method is not a keyword. parse-request-line"))
-;;           http)))))
-
-
-;;just for the fun of it, this is about 10x faster than using (str:split ..)
-(defun msplit (string)
-  (declare (optimize (speed 3) (safety 1)))
-  (let ((str1 (make-array 0 :element-type 'character :fill-pointer 0 :adjustable t))
-        (str2 (make-array 0 :element-type 'character :fill-pointer 0 :adjustable t))
-        (flag nil))
-    (loop :for char :across string 
-          :do  (if (char= #\: char)
-                   (setf flag t)
-                   (if flag
-                       (vector-push-extend char str1)
-                       (vector-push-extend char str2))))
-    (list (coerce str2 'string) (coerce str1 'string))))
-
 (defun download-header (stream)
   "Given a octet STREAM attempts to download a correct http header field and its associated value.
   This parser signals a variety of conditions.
@@ -390,10 +354,11 @@ ARRAY. If there is a failure then returns an empty octet-array"
       (when (ascii-delimiter-p byte)
         (error 'ascii-delimiter-found
                :p-e-message "Found an ascii delimiter in field-name in download-header"))
-      (when (and (or (= byte +newline+)
-                     (= byte +return+))
-                 (zerop pos));;check for a newline
-        (error 'end-of-headers));;handle the newline by signalling a condition
+      (when (and (zerop pos) (= byte +return+))
+        (if (= (read-byte stream) +newline+)
+            (error 'end-of-headers)
+            (error 'invalid-header-name)))
+      ;;handle the newline by signalling a condition
       (when (white-space-p byte)
         (error 'white-space-in-field-name
                :p-e-message "white-space found in field-name in download-header"))
@@ -430,18 +395,6 @@ ARRAY. If there is a failure then returns an empty octet-array"
         (setf (headers http) headers)))
     http))
 
-(defmethod get-headers2 ((http http-packet) stream)
-  (setf (headers http)
-        (loop :for line := (read-line-until-crlf stream)
-              :for split := (if (= 1 (length line))
-                                '("")
-                                (msplit line))
-              :while (/= (length split) 1)
-              :collect
-              (cons (header-string->symbol (str:trim-left (car split)))
-                    (parse-header-parameters (second split)))))
-  http)
-
 (defparameter *requests* ())
 
 (defun parse-header-parameters (line)
@@ -458,17 +411,25 @@ ARRAY. If there is a failure then returns an empty octet-array"
 (defmethod get-content-length ((http http-packet))
   (let ((len (cdr (assoc 'content-length (headers http)))))
     (when len       
-      (parse-integer (first len)))))
+      (parse-integer len))))
 
 (defmethod get-content-params ((http http-packet) stream)
   ;;(push http *requests*)
   (let ((length (get-content-length http)))
-    (when length
-      (let ((content (make-array length :element-type '(unsigned-byte 8))))
-        (read-sequence content stream)
-        (setf (body http) content
-              (content-headers http)
-              (parse-header-parameters content))))))
+    (if length
+        (let ((content (make-array length :element-type '(unsigned-byte 8))))
+          (read-sequence content stream)
+          (setf (body http) content
+                (content-headers http)
+                (parse-parameters (octet-array-to-string content))))
+        (read-byte stream))));;make sure we read the last byte to finish the entire packet
+
+(defparameter *packet* ())
+
+(defmethod url-encoded-form-p ((http-packet http-packet))
+  (string-equal
+   (cdr (assoc 'content-type (headers http-packet)))
+   "application/x-www-form-urlencoded"))
 
 (defun parse-request (stream)
   "Given a STREAM reads from the stream and attempts to construct a valid instance of http-packet.
@@ -476,33 +437,25 @@ Finally returns this packet."
   (let ((http (make-instance 'http-packet)))
     (parse-request-line http stream)
     (parse-headers http stream)
-    (get-content-params http stream)
+    (push http *packet*)
+    (let ((len (get-content-length http)))
+      (if (and len
+               (equal (http-method http) :POST);;just support post for now, not sure if others send
+               ;;forms
+               (url-encoded-form-p http));;I need to yeet the random fucking carriage returns..
+          (setf (content-headers http)
+                (progn
+                  (download-query-string stream len)))
+          (when len
+            (let ((content (make-array len :element-type '(unsigned-byte 8))))
+              (read-sequence content stream)))))
     http))
-
-(defun read-line-until-CRLF (stream)
-  (declare (optimize (speed 3) (safety 1)))
-  (unless (open-stream-p stream)
-    (signal-dirty-disconnect stream))
-  (let ((list 
-          (the list
-               (loop :for byte := (read-byte stream nil)
-                     :collect (code-char byte) :into boof 
-                     :if (= byte +return+)
-                       :do
-                          (let ((nbyte (read-byte stream nil)))
-                            (when (= nbyte +newline+)
-                              (return boof)))))))
-    (coerce list 'string)))
-
-
-(defparameter *packet* ())
 
 (defmethod wants-to-close-p ((request http-packet))
   "Checks if a packet has sent a Connection: close header or if it hasn't sent a Connection header at
 all then assume it wants to say open as per the HTTP 1.1 spec."
   (with-accessors ((headers headers))
-      request
-    (push request *packet*)
+      request    
     (let ((con (assoc 'CONNECTION headers)))
       (string-equal (cdr con) "Close"))))
 

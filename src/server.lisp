@@ -159,7 +159,7 @@ incoming-connection is in use already."
             (log:error "Packet downloaded is bad see *bad-packets*"))
           (parser-error (c)
             (log:error "Error parsing packet. See condition name for details ~A" c)
-            (serve-static-handler server (400-handler) :400 (con-stream con)))
+            (serve-static-handler server (400-handler) :400 (con-stream con) t))
           (condition (c);;this'll do for now
             (push c *errors*)
             (log:error "Error: ~A" c)
@@ -276,13 +276,12 @@ to shutdown ie containing the header 'Connection: close'"
 
 
 
-(defparameter *packetss* ())
+;;(defparameter *packetss* ())
 
 (defmethod serve ((server server) stream)
   "Given an instance of SERVER and a STREAM this function will attempt to parse a HTTP request from
 the STREAM and then call the associated handler."
   (let ((packet (parse-request stream)))
-    ;; (push packet *packetss*)
     (with-accessors ((http-method http-method)
                      (path path))
         packet

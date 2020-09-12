@@ -10,6 +10,12 @@ Currently has support for HTTP 1.1 persistent connections.
 * Cookies work, you can get them and set them in a handler
 * no headers are not decoded beyond strings, when you grab a cookie it will be decoded
 
+## Todo
+* Session system
+* Set a path and cache all static content like icons, js etc
+* Authentication - although not HTTPS 
+* 
+
 # Intro
 
 This is just a trivial HTTP server that I have made for the fun of it.

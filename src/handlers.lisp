@@ -85,10 +85,10 @@
            (set-handler ,server ,method ,path ,handler))))))
 
 
-(defmethod serve-static-handler ((server server) (handler handler) packet http-status stream)
-  (let* ((response (make-http-response server handler :403))
+(defmethod serve-static-handler ((server server) (handler handler) http-status stream close)
+  (let* ((response (make-http-response server handler :403 :close close))
          (*standard-output* (body response)))
-    (funcall (response-body-func handler) packet response)
+    (funcall (response-body-func handler) nil response)
     (handler-case
         (send-response stream response)
       (dirty-disconnect (c)
