@@ -1,1 +1,1 @@
-fie%ld1=value1&field2=value2&field3=value3+value6&field4=boink+doink+koink  
+GET http://127.0.0.1:9000/greetings?fie%ld1=value1&field2=value2&field3=value3+value6&field4=boink+doink+koink HTTP/1.1

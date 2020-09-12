@@ -132,6 +132,7 @@ incoming-connection is in use already."
 
 (defparameter *bad-packets* ())
 
+
 (defun service-connection-pool (server serving-thread)
   (with-accessors ((connections connection-queue))
       serving-thread
@@ -157,7 +158,8 @@ incoming-connection is in use already."
             (push (m-p-packet c) *bad-packets*)
             (log:error "Packet downloaded is bad see *bad-packets*"))
           (parser-error (c)
-            (log:error "Error parsing packet. See condition name for details ~A" c))
+            (log:error "Error parsing packet. See condition name for details ~A" c)
+            (serve-static-handler server (400-handler) :400 (con-stream con)))
           (condition (c);;this'll do for now
             (push c *errors*)
             (log:error "Error: ~A" c)
@@ -271,6 +273,8 @@ to shutdown ie containing the header 'Connection: close'"
           (usocket:socket-close (connection incoming-connection))
           (signal-graceful-disconnect))
         (signal-dirty-disconnect incoming-connection))));;we finish by telling the processor to delete the connection
+
+
 
 (defparameter *packetss* ())
 

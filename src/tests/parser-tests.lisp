@@ -9,6 +9,9 @@
 (defparameter *download-status-line*
   (uiop:directory-files "../src/tests/parser-tests/status-line/"))
 
+(defparameter *download-complete-packets*
+  (uiop:directory-files "../src/tests/parser-tests/complete-packets/"))
+
 (defmacro opened-file (file &body body)
   `(with-open-file (s ,file :element-type '(unsigned-byte 8))
      ,@body))
@@ -21,7 +24,7 @@
 (defun test-query-parser ()
   (loop :for x :in *download-status-line*
         :collect (opened-file x
-                   (download-get-query-string s))))
+                   (parse-request-line (make-instance 'http-packet) s))))
 
 (defun test-download-header ()
   (loop :for x :in *download-header-test*
@@ -34,4 +37,11 @@
             (end-of-file (c)
               c)))))
 
-
+(defun test-complete-packets ()
+  (loop :for x :in *download-complete-packets*
+        :collect
+        (handler-case
+            (opened-file x
+              (parse-request s))
+          (parser-error (c)
+            c))))

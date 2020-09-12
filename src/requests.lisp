@@ -11,6 +11,7 @@
 (defconstant +htab+ (the (integer 0 255) 9))
 (defconstant +equals+ (the (integer 0 255) 61))
 (defconstant +plus+ (the (integer 0 255) 43))
+(defconstant +questionmark+ (the (integer 0 255) 63))
 
 (defconstant +field-size-restriction+ (the (integer 0 512) 512))
 
@@ -179,10 +180,21 @@
 ;;;
 ;;;parsing each one they should set a flag to say they need to be percentage decoded
 
-(defun reversed-char-list-to-symbol (char-list)
-  (intern  (coerce (reverse char-list) 'string) :jupiter))
-(defun reversed-char-list-to-string (char-list)
-  (coerce (reverse char-list) 'string))
+(defun parser-percent-decode (string &optional (condition 'invalid-request-line-url))
+  "Attempts to decode a string. For use within the parser as by default the parser specific condition
+it signals 'invalid-request-line-url"
+  (handler-case (percent-encoding:decode string)
+    ((or PERCENT-ENCODING:INVALID-% PERCENT-ENCODING:INVALID-HEXDIG) ()
+      string)
+    (condition ()
+      (error condition
+             :p-e-message "Failed to percent-decode the GET query string"
+             :p-e-value string))))
+
+(defun parser-list-to-sym (char-list)
+  (intern (parser-percent-decode (coerce (reverse char-list) 'string)) :jupiter))
+(defun parser-list-to-string (char-list)
+  (parser-percent-decode (coerce (reverse char-list) 'string)))
 
 (defun download-get-query-string (stream)
   "Given a stream whose next byte is the start of a query string this will parse the string into an 
@@ -193,28 +205,28 @@ alist"
        (variable nil)
        (values-accumulator nil)
        (values nil))
-      ((or (null byte)(= byte +space+))
+      ((= byte +space+)
        (if values-accumulator
            (progn 
-             (push (reversed-char-list-to-string values) values-accumulator)
-             (push (list (reversed-char-list-to-symbol variable) values-accumulator) result-list))
-           (push (list (reversed-char-list-to-symbol variable)
-                       (reversed-char-list-to-string values))
+             (push (parser-list-to-string values) values-accumulator)
+             (push (list (parser-list-to-sym variable) values-accumulator) result-list))
+           (push (list (parser-list-to-sym variable)
+                       (list (parser-list-to-string values)))
                  result-list))
-       result-list)
+       (reverse result-list))
     (cond ((= byte +equals+);;if its an = then it changes from variable to value
            (setf write-variable-p nil));; change to write to value
           ((= byte +plus+);;if its a plus then we have more values 
-           (push (reversed-char-list-to-string values) values-accumulator)
+           (push (parser-list-to-string values) values-accumulator)
            (setf values nil))
           ((query-split-p byte)
            (setf write-variable-p t)
            (if values-accumulator
                (progn 
-                 (push  (reversed-char-list-to-string values) values-accumulator)
-                 (push (list (reversed-char-list-to-symbol variable) values-accumulator) result-list))
-               (push (list (reversed-char-list-to-symbol variable)
-                           (list (reversed-char-list-to-string values)))
+                 (push (parser-list-to-string values) values-accumulator)
+                 (push (list (parser-list-to-sym variable) values-accumulator) result-list))
+               (push (list (parser-list-to-sym variable)
+                           (list (parser-list-to-string values)))
                      result-list))
            (setf values-accumulator nil)
            (setf variable nil)
@@ -222,12 +234,9 @@ alist"
           (t (if write-variable-p
                  (push (char-upcase (code-char byte)) variable)
                  (push (code-char byte) values))))))
-           
-      
-       
 
-  (defmacro f-w-b (byte buffer)
-    `(fast-io:fast-write-byte ,byte ,buffer))
+(defmacro f-w-b (byte buffer)
+  `(fast-io:fast-write-byte ,byte ,buffer))
 
 (defmacro octet-array (length)
   `(fast-io:make-octet-vector ,length))
@@ -258,6 +267,31 @@ ARRAY. If there is a failure then returns an empty octet-array"
     (end-of-file ()
       (octet-array 0))))
 
+(defun parse-request-line-url (stream)
+  (check-type stream stream)
+  (handler-case 
+      (locally
+          (declare (optimize (speed 3) (safety 0)));;we do type checks above
+        (do ((byte (read-byte stream)(read-byte stream))
+             (array (octet-array 2048))
+             (max 2048 (1- (the fixnum max)));;see ;;https://stackoverflow.com/questions/417142/what-is-the-maximum-length-of-a-url-in-different-browsers
+             (pos (the fixnum 0) (the fixnum (1+ (the fixnum pos)))))
+            ((or (= +space+ byte)
+                 (= 0 max)
+                 (= byte +questionmark+))
+             (if (= byte +questionmark+)
+                 ;;this means that we now have started the query-string
+                 (let ((query-string-list (download-get-query-string stream)))
+                   (values query-string-list  (subseq array 0 pos)))
+                 (if (= +space+ byte)
+                     (values nil (subseq array 0 pos))
+                     (octet-array 0))))
+          (if (or (= byte +return+) (= byte +newline+));;ignore newlines or carriage returns.
+              (decf (the fixnum pos))
+              (setf (aref array pos) byte))))
+    (end-of-file ()
+      (octet-array 0))))
+
 (defun empty-array-p (array)
   (zerop (length array)))
 
@@ -268,18 +302,21 @@ ARRAY. If there is a failure then returns an empty octet-array"
       (map-into var #'code-char octet-vector)
       var)))
 
-
 (defmethod parse-request-line ((http http-packet) stream)
   (declare (optimize (speed 3) (safety 1)))
   (let ((method (octet-array 7));;this is the max size for delete
-        (url (octet-array 2048));;see ;;https://stackoverflow.com/questions/417142/what-is-the-maximum-length-of-a-url-in-different-browsers
+        (url nil)
         (http-ver (octet-array 9)));;this is basically the biggest
     (setf method (read-until-and-into-buff stream +space+ method 7));;32 is Space
     (when (empty-array-p method)
       (error 'invalid-request-line-method :p-e-message "Failed in parse-request-line"))
-    (setf url (read-until-and-into-buff stream +space+ url 2048))
-    (when (empty-array-p url)
-      (error 'invalid-request-line-url :p-e-message "Failed in parse-request-line"))
+    (multiple-value-bind (query parsed-url)
+        (parse-request-line-url stream)
+      (when (empty-array-p parsed-url)
+        (error 'invalid-request-line-url :p-e-message "Failed in parse-request-line"))
+      (when query
+        (setf (parameters http) query))
+      (setf url parsed-url))
     (setf http-ver (read-until-and-into-buff stream +newline+ http-ver 9));;10 is newline
     (when (empty-array-p http-ver)
       (error 'invalid-request-line-version :p-e-message "Failed in parse-request-line"))
@@ -328,17 +365,17 @@ ARRAY. If there is a failure then returns an empty octet-array"
 
 (defun download-header (stream)
   "Given a octet STREAM attempts to download a correct http header field and its associated value.
-This parser signals a variety of conditions.
-If the field-name is greater than +field-size-restriction+ then signals 'oversized-header-field-name
-If a newline is found as the first character then signals 'end-of-headers to tell the caller that
-there headers portion of the HTTP request has finished.
-If there is white-space (#\Tab or #\Space) in the header name then signals 'white-space-in-field-name
-If there are any US-ascii delimiters (char-code 28 to 31) in the field name then signals 
-ascii-delimiter-found.
-If the field-value is greater than +field-size-restriction+ then signals 
-'oversized-header-field-value.
-This parser will also strip the starting optional white space from the header field value, but it 
-does not remove the optional white space from the end."
+  This parser signals a variety of conditions.
+  If the field-name is greater than +field-size-restriction+ then signals 'oversized-header-field-name
+  If a newline is found as the first character then signals 'end-of-headers to tell the caller that
+  there headers portion of the HTTP request has finished.
+  If there is white-space (#\Tab or #\Space) in the header name then signals 'white-space-in-field-name
+  If there are any US-ascii delimiters (char-code 28 to 31) in the field name then signals 
+  ascii-delimiter-found.
+  If the field-value is greater than +field-size-restriction+ then signals 
+  'oversized-header-field-value.
+  This parser will also strip the starting optional white space from the header field value, but it 
+  does not remove the optional white space from the end."
   (declare (optimize (speed 3) (safety 1)))
   (let ((header-name (octet-array +field-size-restriction+))
         (header-vals (octet-array +field-size-restriction+)));;cap both at 512 bytes
@@ -416,7 +453,7 @@ does not remove the optional white space from the end."
     (mapcar (lambda (l)
               (mapcar #'str:trim
                       (str:split ";" l)))
-            split)))
+  split)))
 
 (defmethod get-content-length ((http http-packet))
   (let ((len (cdr (assoc 'content-length (headers http)))))

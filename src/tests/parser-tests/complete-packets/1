@@ -1,0 +1,6 @@
+GET http://127.0.0.1:9000/greetings?fie%ld1=value1&field2=value2&field3=value3+value6&field4=boink+doink+koink HTTP/1.1
+Host: 127.0.0.1:9000
+Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8
+Accept-Language: en-US,en;q=0.5
+
+

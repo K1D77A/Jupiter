@@ -84,6 +84,16 @@
                                                   :last-modified ,time)))
            (set-handler ,server ,method ,path ,handler))))))
 
+
+(defmethod serve-static-handler ((server server) (handler handler) packet http-status stream)
+  (let* ((response (make-http-response server handler :403))
+         (*standard-output* (body response)))
+    (funcall (response-body-func handler) packet response)
+    (handler-case
+        (send-response stream response)
+      (dirty-disconnect (c)
+        (log:warn "Dirty disconnection by client: ~A" c)))))
+
 (defun 404-handler (method url)
   (make-instance 'handler :response-body-func 
                  (lambda () (format t "404 not found~%URL: ~S~%METHOD: ~S~%" method url))
@@ -96,6 +106,23 @@
                  (lambda () (format t "504 connection timed out"))
                  :creation-time (time-now)
                  :last-modified (time-now)))
+
+(defun 400-handler ()
+  (make-instance 'handler
+                 :response-body-func
+                 (lambda () (format t "400 Bad Request"))
+                 :creation-time (time-now)
+                 :last-modified (time-now)))
+
+(defun 413-handler ()
+  (make-instance 'handler
+                 :response-body-func
+                 (lambda () (format t "413 Payload Too Large"))
+                 :creation-time (time-now)
+                 :last-modified (time-now)))
+
+
+
 
 
 
